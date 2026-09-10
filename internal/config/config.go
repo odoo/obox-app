@@ -21,15 +21,20 @@ const (
 )
 
 type AppConfig struct {
-	Port            int      `json:"port"`
-	LANPrinters     []string `json:"lan_printers,omitempty"`
-	NetworkPrinting bool     `json:"network_printing"`
+	AppID           string     `json:"app_id"`
+	Port            int        `json:"port"`
+	LANPrinters     []string   `json:"lan_printers,omitempty"`
+	NetworkPrinting bool       `json:"network_printing"`
+	Odoo            OdooConfig `json:"odoo"`
 }
 
 func defaults() AppConfig {
 	return AppConfig{
+		AppID:           GenerateAppID(),
 		Port:            0,
 		NetworkPrinting: false,
+		LANPrinters:     []string{},
+		Odoo:            OdooConfig{},
 	}
 }
 

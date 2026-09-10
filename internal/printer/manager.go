@@ -1,18 +1,22 @@
 package printer
 
 import (
+	"epos-proxy/internal/config"
 	"epos-proxy/internal/logger"
+	"epos-proxy/internal/util"
 	"fmt"
 	"sync"
 )
 
 type Manager struct {
 	mu       sync.Mutex
+	port     int
+	cfg      *config.Manager
 	printers map[string]*Printer
 }
 
-func NewManager() *Manager {
-	return &Manager{printers: make(map[string]*Printer)}
+func NewManager(port int, cfg *config.Manager) *Manager {
+	return &Manager{port: port, cfg: cfg, printers: make(map[string]*Printer)}
 }
 
 func (m *Manager) Get(id string) (*Printer, error) {
@@ -55,4 +59,80 @@ func (m *Manager) WriteAsync(printerId string, data []byte) (<-chan JobResult, e
 	}
 
 	return reply, nil
+}
+
+type Device struct {
+	Ip         string `json:"ip"`
+	Identifier string `json:"identifier"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	IsLAN      bool   `json:"isLAN"`
+	LANIp      string `json:"lanIp,omitempty"`
+	Online     bool   `json:"online"`
+}
+
+type UnavailableDevice struct {
+	Name     string `json:"name"`
+	ErrorMsg string `json:"errorMsg"`
+	IsLAN    bool   `json:"isLAN"`
+	LANIp    string `json:"lanIp,omitempty"`
+}
+
+type DiscoveryResult struct {
+	Printers            []Device            `json:"printers"`
+	UnavailablePrinters []UnavailableDevice `json:"unavailablePrinters"`
+	ErrorMsg            string              `json:"errorMsg"`
+}
+
+func (m *Manager) DiscoverAllPrinters() DiscoveryResult {
+	available := make([]Device, 0)
+	unavailable := make([]UnavailableDevice, 0)
+	var scanErr string
+
+	// 1. USB printers
+	usbPrinters, err := ListUSBPrinters()
+	if err != nil {
+		scanErr = err.Error()
+		logger.Errorf("USB printer detection failed: %v", err)
+	} else if usbPrinters != nil {
+		logger.Debugf("Detected %d available USB printers", len(usbPrinters.Available))
+		for _, info := range usbPrinters.Available {
+			available = append(available, Device{
+				Ip:         util.GetPrinterUrl(m.port, m.cfg.IsNetworkPrintingEnabled(), info.Id),
+				Identifier: info.Id,
+				Name:       info.Name,
+				Type:       string(info.Type),
+				IsLAN:      false,
+				Online:     true,
+			})
+		}
+
+		for _, u := range usbPrinters.Unavailable {
+			unavailable = append(unavailable, UnavailableDevice{
+				Name:     u.Name,
+				ErrorMsg: u.Error,
+			})
+			logger.Warnf("USB printer unavailable: %s (%s)", u.Name, u.Error)
+		}
+	}
+
+	// 2. LAN printers
+	lanPrinters := ListLANPrinters(m.cfg)
+	for _, lan := range lanPrinters {
+		available = append(available, Device{
+			Ip:         util.GetPrinterUrl(m.port, m.cfg.IsNetworkPrintingEnabled(), lan.Id),
+			Identifier: lan.Id,
+			Name:       fmt.Sprintf("Network - %s", lan.IP),
+			Type:       string(TypeReceipt),
+			IsLAN:      true,
+			LANIp:      lan.IP,
+			Online:     true,
+		})
+	}
+
+	return DiscoveryResult{
+		Printers:            available,
+		UnavailablePrinters: unavailable,
+		ErrorMsg:            scanErr,
+	}
 }

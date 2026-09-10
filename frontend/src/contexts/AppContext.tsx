@@ -1,6 +1,7 @@
 import { createContext, useEffect, useState } from "react";
 import { main } from "../../wailsjs/go/models";
 import { AppVariable } from "../../wailsjs/go/main/App";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 
 const RETRY_INTERVAL = 5000;
 
@@ -9,6 +10,8 @@ type AppContextType = {
   data: {
     os: string | null;
     app: main.AppVariable | null;
+    appId: string;
+    ipAddress: string;
     isWindows: boolean;
     isMac: boolean;
     isLinux: boolean;
@@ -30,6 +33,8 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
   const data = {
     app,
     os,
+    appId: app?.appId || "",
+    ipAddress: app?.ipAddress || "",
     isWindows: os === "windows",
     isMac: os === "darwin",
     isLinux: os === "linux",
@@ -58,12 +63,19 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
       }
     };
 
+    const unsubscribe = EventsOn("app:variables_changed", (variables: main.AppVariable) => {
+      setApp(variables);
+    });
+
     fetchAppContext();
 
     return () => {
       cancelled = true;
       if (retryId !== null) {
         clearTimeout(retryId);
+      }
+      if (unsubscribe) {
+        unsubscribe();
       }
     };
   }, []);

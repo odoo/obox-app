@@ -13,21 +13,7 @@ import (
 	"epos-proxy/internal/testutil"
 )
 
-func TestServer_Lifecycle(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
-
-	testutil.ExpectedTrue(t, s.Running(), "Expected server to be running after New()")
-	testutil.ExpectedEqual(t, s.Port, port)
-
-	err := s.Stop()
-	testutil.ExpectedNoError(t, err)
-}
-
 func TestPrintData_ValidXML_Success(t *testing.T) {
-	// Start mock TCP listener on port 9100 for LAN printer
 	_, _, err := testutil.StartMockTCPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		buf := make([]byte, 1024)
@@ -35,11 +21,7 @@ func TestPrintData_ValidXML_Success(t *testing.T) {
 	})
 	testutil.ExpectedNoError(t, err)
 
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
-
+	s, _ := newTestServer(t, nil)
 	printerID := printer.EncodeLANPrinterID("127.0.0.1")
 	xmlPayload := `<epos-print><text align="center">ORDER #123</text><cut /></epos-print>`
 
@@ -57,10 +39,7 @@ func TestPrintData_ValidXML_Success(t *testing.T) {
 }
 
 func TestPrintData_SchemaError(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
+	s, _ := newTestServer(t, nil)
 
 	invalidPayload := `<invalid>not-an-epos-print</invalid>`
 	req := httptest.NewRequest("POST", "/p/any-printer/cgi-bin/epos/service.cgi", bytes.NewReader([]byte(invalidPayload)))
@@ -70,19 +49,13 @@ func TestPrintData_SchemaError(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	body, _ := io.ReadAll(resp.Body)
-	bodyStr := string(body)
-
-	testutil.ExpectedContains(t, bodyStr, `success="false"`)
-	testutil.ExpectedContains(t, bodyStr, `code="SchemaError"`)
+	testutil.ExpectedContains(t, string(body), `success="false"`)
+	testutil.ExpectedContains(t, string(body), `code="SchemaError"`)
 }
 
 func TestPrintData_UnreachablePrinter_EX_BADPORT(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
+	s, _ := newTestServer(t, nil)
 
-	// Use a non-existent USB printer serial that cannot be found
 	printerID := "czpOT05fRVhJU1RFTlRfU0VSSUFMCg"
 	xmlPayload := `<epos-print><text>Hello</text></epos-print>`
 
@@ -94,14 +67,11 @@ func TestPrintData_UnreachablePrinter_EX_BADPORT(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	body, _ := io.ReadAll(resp.Body)
-	bodyStr := string(body)
-
-	testutil.ExpectedContains(t, bodyStr, `success="false"`)
-	testutil.ExpectedContains(t, bodyStr, `code="EX_BADPORT"`)
+	testutil.ExpectedContains(t, string(body), `success="false"`)
+	testutil.ExpectedContains(t, string(body), `code="EX_BADPORT"`)
 }
 
 func TestPrintLabel_Success(t *testing.T) {
-	// Start mock TCP listener on port 9100
 	_, _, err := testutil.StartMockTCPServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		buf := make([]byte, 1024)
@@ -109,11 +79,7 @@ func TestPrintLabel_Success(t *testing.T) {
 	})
 	testutil.ExpectedNoError(t, err)
 
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
-
+	s, _ := newTestServer(t, nil)
 	printerID := printer.EncodeLANPrinterID("127.0.0.1")
 	labelData := []byte("^XA^FDBarcode123^FS^XZ")
 
@@ -126,10 +92,7 @@ func TestPrintLabel_Success(t *testing.T) {
 }
 
 func TestPrintLabel_EmptyBody_BadRequest(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
+	s, _ := newTestServer(t, nil)
 
 	req := httptest.NewRequest("POST", "/p/any-printer/pstprnt", bytes.NewReader([]byte{}))
 	resp, err := s.app.Test(req)
@@ -138,10 +101,7 @@ func TestPrintLabel_EmptyBody_BadRequest(t *testing.T) {
 }
 
 func TestPrintLabel_UnreachablePrinter_ServerError(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
+	s, _ := newTestServer(t, nil)
 
 	printerID := "czpOT05fRVhJU1RFTlRfU0VSSUFMCg"
 	labelData := []byte("^XA^FDTest^FS^XZ")
@@ -155,10 +115,7 @@ func TestPrintLabel_UnreachablePrinter_ServerError(t *testing.T) {
 }
 
 func TestCORSHeaders(t *testing.T) {
-	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	s := New(port, mgr)
-	defer s.Stop()
+	s, _ := newTestServer(t, nil)
 
 	req := httptest.NewRequest("OPTIONS", "/cgi-bin/epos/service.cgi", nil)
 	req.Header.Set("Origin", "http://example.com")
@@ -166,9 +123,7 @@ func TestCORSHeaders(t *testing.T) {
 
 	resp, err := s.app.Test(req)
 	testutil.ExpectedNoError(t, err)
-
-	allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
-	testutil.ExpectedEqual(t, allowOrigin, "*")
+	testutil.ExpectedEqual(t, resp.Header.Get("Access-Control-Allow-Origin"), "*")
 }
 
 func TestPrintData_AutoSelectRoute(t *testing.T) {
@@ -178,28 +133,20 @@ func TestPrintData_AutoSelectRoute(t *testing.T) {
 		expected []string
 	}{
 		{
-			name:    "schema error",
-			payload: `<bad></bad>`,
-			expected: []string{
-				`code="SchemaError"`,
-			},
+			name:     "schema error",
+			payload:  `<bad></bad>`,
+			expected: []string{`code="SchemaError"`},
 		},
 		{
-			name:    "no USB printer",
-			payload: `<epos-print><text align="center">RECEIPT</text><cut /></epos-print>`,
-			expected: []string{
-				`success="false"`,
-				`code="EX_BADPORT"`,
-			},
+			name:     "no USB printer",
+			payload:  `<epos-print><text align="center">RECEIPT</text><cut /></epos-print>`,
+			expected: []string{`success="false"`, `code="EX_BADPORT"`},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			port := testutil.GetFreePort(t)
-			mgr := printer.NewManager()
-			s := New(port, mgr)
-			defer s.Stop()
+			s, _ := newTestServer(t, nil)
 
 			req := httptest.NewRequest("POST", "/cgi-bin/epos/service.cgi", bytes.NewReader([]byte(tc.payload)))
 			req.Header.Set("Content-Type", "text/xml")

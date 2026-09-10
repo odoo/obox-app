@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -e
+
+# Format all Go files in the repository
+echo "Running gofmt -w . ..."
+gofmt -w .
+
+# Re-stage any staged .go files that were formatted
+staged_go_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+if [ -n "$staged_go_files" ]; then
+    echo "$staged_go_files" | xargs -r git add
+fi
