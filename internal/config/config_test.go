@@ -219,28 +219,13 @@ func TestManager_ConcurrentAccess(t *testing.T) {
 }
 
 func TestFindAvailablePort_RangeExhausted(t *testing.T) {
-	start := testutil.GetFreePort(t)
-	end := start + 2
-	var listeners []net.Listener
-	for p := start; p <= end; p++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
-		if err != nil {
-			for _, l := range listeners {
-				_ = l.Close()
-			}
-			t.Skipf("Port %d busy: %v", p, err)
-		}
-		listeners = append(listeners, ln)
-	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	testutil.ExpectedNoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	defer ln.Close()
 
-	defer func() {
-		for _, ln := range listeners {
-			_ = ln.Close()
-		}
-	}()
-
-	port, err := findAvailablePort(start, end)
+	result, err := findAvailablePort(port, port)
 	testutil.ExpectedError(t, err)
 	testutil.ExpectedTrue(t, errors.Is(err, ErrNoAvailablePort))
-	testutil.ExpectedEqual(t, port, 0)
+	testutil.ExpectedEqual(t, result, 0)
 }

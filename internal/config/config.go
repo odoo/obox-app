@@ -21,15 +21,20 @@ const (
 )
 
 type AppConfig struct {
-	Port            int      `json:"port"`
-	LANPrinters     []string `json:"lan_printers,omitempty"`
-	NetworkPrinting bool     `json:"network_printing"`
+	AppID           string     `json:"app_id"`
+	Port            int        `json:"port"`
+	LANPrinters     []string   `json:"lan_printers,omitempty"`
+	NetworkPrinting bool       `json:"network_printing"`
+	Odoo            OdooConfig `json:"odoo"`
 }
 
 func defaults() AppConfig {
 	return AppConfig{
+		AppID:           generateAppID(),
 		Port:            0,
 		NetworkPrinting: false,
+		LANPrinters:     []string{},
+		Odoo:            OdooConfig{},
 	}
 }
 
@@ -138,10 +143,10 @@ func (cm *Manager) GetPort() int {
 	return cm.Data.Port
 }
 
-func (cm *Manager) SetNetworkPrintingEnabled(enabled bool) error {
+func (cm *Manager) ToggleNetworkPrinting() error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	cm.Data.NetworkPrinting = enabled
+	cm.Data.NetworkPrinting = !cm.Data.NetworkPrinting
 	return cm.saveLocked()
 }
 

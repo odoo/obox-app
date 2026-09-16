@@ -1,16 +1,15 @@
-import { main } from "../../wailsjs/go/models";
+import { printer } from "../../wailsjs/go/models";
 
 export async function sendEposPrint(
-  printer: main.Printer,
+  printer: printer.Device,
   openCashDrawer = false,
 ) {
   const content = openCashDrawer
     ? "<pulse />"
     : `
-        <feed line="1" />
         <text font="font_e" em="true"/>
         <text align="center">This is a test receipt ${printer.name}</text>
-        <feed line="10" />
+        <feed line="3" />
         <cut type="feed" />
       `;
 

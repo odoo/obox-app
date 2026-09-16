@@ -6,15 +6,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
+	"epos-proxy/internal/app_actions"
 	"epos-proxy/internal/config"
 	"epos-proxy/internal/logger"
+	"epos-proxy/internal/obox"
 	"epos-proxy/internal/printer"
 	"epos-proxy/internal/server"
 	"epos-proxy/internal/testutil"
 	"epos-proxy/internal/util"
 
+	autostart "github.com/emersion/go-autostart"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -40,11 +45,153 @@ func (f *fakeDialogs) SaveFile(_ context.Context, opts wailsruntime.SaveDialogOp
 	return f.savePath, f.saveErr
 }
 
+type emittedEvent struct {
+	Name string
+	Data []interface{}
+}
+
+// fakeEvents is an emitter that records every emitted event, so event-driven
+// code paths can be tested without Wails.
+type fakeEvents struct {
+	mu      sync.Mutex
+	emitted []emittedEvent
+}
+
+func (f *fakeEvents) Emit(_ context.Context, eventName string, optionalData ...interface{}) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.emitted = append(f.emitted, emittedEvent{
+		Name: eventName,
+		Data: optionalData,
+	})
+}
+
+func (f *fakeEvents) getEvents() []emittedEvent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	copied := make([]emittedEvent, len(f.emitted))
+	copy(copied, f.emitted)
+	return copied
+}
+
+func waitFor(timeout time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return cond()
+}
+
 func TestNewApp(t *testing.T) {
 	app := NewApp()
 	testutil.ExpectedNotNil(t, app)
 	testutil.ExpectedNotNil(t, app.autoStart)
-	testutil.ExpectedNotNil(t, app.printerManager)
+	testutil.ExpectedNotNil(t, app.events)
+	testutil.ExpectedNotNil(t, app.config)
+}
+
+func TestApp_CheckOdooStatus(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+	cfg.Data.Port = testutil.GetFreePort(t)
+	_ = cfg.SaveOdooCredentials("http://127.0.0.1:8069", "tok")
+
+	mgr := printer.NewManager(cfg)
+	oboxMod := obox.NewManager(cfg.Data.Port, cfg, app_actions.OboxActionHandler(mgr))
+	srv := server.New(cfg.Data.Port, mgr, oboxMod)
+	defer srv.Stop()
+	defer oboxMod.Stop()
+
+	app := &App{
+		webserver:      srv,
+		config:         cfg,
+		printerManager: mgr,
+		obox:           oboxMod,
+	}
+
+	status := app.CheckOdooStatus()
+	testutil.ExpectedEqual(t, status.DBURL, "http://127.0.0.1:8069")
+	testutil.ExpectedEqual(t, status.LanStatus, "connecting")
+}
+
+func TestApp_ConfirmDisconnectOdoo(t *testing.T) {
+	tests := []struct {
+		name             string
+		dialogResult     string
+		dialogErr        error
+		expectDisconnect bool
+		expectErr        bool
+	}{
+		{name: "confirm disconnect", dialogResult: "Disconnect", expectDisconnect: true},
+		{name: "cancel disconnect", dialogResult: "Cancel", expectDisconnect: false},
+		{name: "dialog error", dialogErr: errors.New("dialog failed"), expectErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cfg, err := config.NewManager()
+			testutil.ExpectedNoError(t, err)
+			cfg.Data.Port = testutil.GetFreePort(t)
+			_ = cfg.SaveOdooCredentials("http://127.0.0.1:8069", "tok")
+
+			mgr := printer.NewManager(cfg)
+			oboxMod := obox.NewManager(cfg.Data.Port, cfg, app_actions.OboxActionHandler(mgr))
+			srv := server.New(cfg.Data.Port, mgr, oboxMod)
+			defer srv.Stop()
+			defer oboxMod.Stop()
+
+			dialogs := &fakeDialogs{messageResult: tc.dialogResult, messageErr: tc.dialogErr}
+			events := &fakeEvents{}
+			app := &App{
+				ctx:            context.Background(),
+				webserver:      srv,
+				config:         cfg,
+				printerManager: mgr,
+				obox:           oboxMod,
+				dialogs:        dialogs,
+				events:         events,
+			}
+			oboxMod.SetOnStatusChange(func(status obox.ConnectionStatus) {
+				app.events.Emit(app.ctx, "odoo:status_changed", status)
+			})
+
+			disconnected, err := app.ConfirmDisconnectOdoo()
+			if tc.expectErr {
+				testutil.ExpectedError(t, err)
+			} else {
+				testutil.ExpectedNoError(t, err)
+			}
+			testutil.ExpectedEqual(t, disconnected, tc.expectDisconnect)
+
+			if tc.expectDisconnect {
+				testutil.ExpectedFalse(t, cfg.HasOdooCredentials())
+				var evts []emittedEvent
+				passed := waitFor(500*time.Millisecond, func() bool {
+					evts = events.getEvents()
+					return len(evts) > 0
+				})
+				testutil.ExpectedTrue(t, passed, "expected status_changed event to be emitted")
+				testutil.ExpectedEqual(t, evts[0].Name, "odoo:status_changed")
+			} else {
+				testutil.ExpectedTrue(t, cfg.HasOdooCredentials())
+				testutil.ExpectedLen(t, events.getEvents(), 0)
+			}
+		})
+	}
+}
+
+func TestApp_ConfirmDisconnectOdoo_NilObox(t *testing.T) {
+	app := &App{dialogs: &fakeDialogs{}}
+	disconnected, err := app.ConfirmDisconnectOdoo()
+	testutil.ExpectedError(t, err)
+	testutil.ExpectedFalse(t, disconnected)
+	testutil.ExpectedEqual(t, err.Error(), "Odoo connection is not initialized")
 }
 
 func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
@@ -58,20 +205,28 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	srv := server.New(port, mgr)
+	mgr := printer.NewManager(cfg)
+	srv := server.New(port, mgr, nil)
 	defer srv.Stop()
 
 	app := &App{
 		webserver:      srv,
 		config:         cfg,
 		printerManager: mgr,
+		obox:           nil,
+		autoStart: &autostart.App{
+			Name:        "obox-app",
+			DisplayName: "Obox App",
+			Exec:        []string{os.Args[0]},
+		},
 	}
 
 	appVariable := app.AppVariable()
-	testutil.ExpectedEqual(t, app.GetPrinterUrl("czpTTjEyMzQ1Ng"), fmt.Sprintf("%s:%d/p/czpTTjEyMzQ1Ng", util.GetLocalIP(app.IsNetworkPrintingEnabled()), port))
+	testutil.ExpectedEqual(t, appVariable.AppID, cfg.GetAppID())
+	testutil.ExpectedEqual(t, appVariable.IPAddress, util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled()))
+	testutil.ExpectedEqual(t, util.GetPrinterUrl(srv.Port, app.config.IsNetworkPrintingEnabled(), "czpTTjEyMzQ1Ng"), fmt.Sprintf("%s/p/czpTTjEyMzQ1Ng", util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled())))
 	testutil.ExpectedTrue(t, appVariable.ServerRunning, "Expected ServerRunning to be true")
-	testutil.ExpectedTrue(t, appVariable.Os != "", "Expected non-empty Os field in app variable")
+	testutil.ExpectedTrue(t, appVariable.OS != "", "Expected non-empty Os field in app variable")
 
 	// Verify Printers() includes the configured LAN printer
 	printers := app.Printers()
@@ -81,7 +236,6 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 			foundLAN = true
 			testutil.ExpectedEqual(t, p.Type, string(printer.TypeReceipt))
 			testutil.ExpectedEqual(t, p.Name, "Network - 192.168.1.100")
-			testutil.ExpectedEqual(t, p.Ip, fmt.Sprintf("%s:%d/p/%s", util.GetLocalIP(app.IsNetworkPrintingEnabled()), port, p.Id))
 		}
 	}
 	testutil.ExpectedTrue(t, foundLAN, "Expected to find configured LAN printer in printer status")
@@ -94,7 +248,7 @@ func TestApp_AddLANPrinter(t *testing.T) {
 	cfg, err := config.NewManager()
 	testutil.ExpectedNoError(t, err)
 
-	app := &App{config: cfg}
+	app := &App{config: cfg, printerManager: printer.NewManager(cfg)}
 
 	// Invalid IP format.
 	err = app.AddLANPrinter("not.an.ip")
@@ -121,7 +275,7 @@ func TestApp_AddLANPrinter(t *testing.T) {
 }
 
 func TestApp_CheckLANPrinterStatus(t *testing.T) {
-	app := &App{}
+	app := &App{printerManager: printer.NewManager(nil)}
 
 	// 1. Unreachable (closed IP returns false)
 	testutil.ExpectedFalse(t, app.CheckLANPrinterStatus("127.0.0.254"))
@@ -157,7 +311,7 @@ func TestApp_ConfirmRemoveLANPrinter(t *testing.T) {
 			testutil.ExpectedNoError(t, cfg.AddLanEposPrinter(ip))
 
 			dialogs := &fakeDialogs{messageResult: tc.dialogResult, messageErr: tc.dialogErr}
-			app := &App{config: cfg, dialogs: dialogs}
+			app := &App{config: cfg, printerManager: printer.NewManager(cfg), dialogs: dialogs}
 
 			removed, err := app.ConfirmRemoveLANPrinter(ip)
 
@@ -198,7 +352,7 @@ func TestApp_ConfirmQuit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			app := &App{dialogs: &fakeDialogs{messageResult: tc.dialogResult, messageErr: tc.dialogErr}}
-			testutil.ExpectedEqual(t, app.ConfirmQuit(), tc.expectQuit)
+			testutil.ExpectedEqual(t, app.confirmQuit(), tc.expectQuit)
 		})
 	}
 }
@@ -278,14 +432,33 @@ func TestApp_AutostartMethods(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
 
-	app := NewApp()
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	port := testutil.GetFreePort(t)
+	mgr := printer.NewManager(cfg)
+	srv := server.New(port, mgr, nil)
+	defer srv.Stop()
+
+	app := &App{
+		config:         cfg,
+		webserver:      srv,
+		printerManager: mgr,
+		events:         &fakeEvents{},
+		autoStart: &autostart.App{
+			Name:        "epos-proxy",
+			DisplayName: "ePOS Proxy",
+			Exec:        []string{os.Args[0]},
+		},
+	}
 
 	// Enable autostart on linux creates desktop file
-	err := app.EnableAutostart()
+	err = app.ToggleAutoStart()
 	testutil.ExpectedNoError(t, err)
 
 	// Disable autostart
-	_ = app.DisableAutostart()
+	err = app.ToggleAutoStart()
+	testutil.ExpectedNoError(t, err)
 }
 
 func TestApp_NetworkPrintingEnabled(t *testing.T) {
@@ -296,19 +469,42 @@ func TestApp_NetworkPrintingEnabled(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	srv := server.New(port, mgr)
+	mgr := printer.NewManager(cfg)
+	srv := server.New(port, mgr, nil)
 	defer srv.Stop()
 
-	app := &App{config: cfg, webserver: srv}
+	events := &fakeEvents{}
+	app := &App{
+		ctx:            context.Background(),
+		config:         cfg,
+		webserver:      srv,
+		printerManager: mgr,
+		events:         events,
+		autoStart: &autostart.App{
+			Name:        "obox-app",
+			DisplayName: "Obox App",
+			Exec:        []string{os.Args[0]},
+		},
+	}
 
 	// 1. Initial state (false)
-	testutil.ExpectedFalse(t, app.IsNetworkPrintingEnabled())
+	testutil.ExpectedFalse(t, app.config.IsNetworkPrintingEnabled())
+	testutil.ExpectedLen(t, events.getEvents(), 0)
 
-	// 2. Enable network printing
-	err = app.SetNetworkPrintingEnabled(true)
+	// 2. Toggle network printing to enable
+	err = app.ToggleNetworkPrinting()
 	testutil.ExpectedNoError(t, err)
-	testutil.ExpectedTrue(t, app.IsNetworkPrintingEnabled())
+	testutil.ExpectedTrue(t, app.config.IsNetworkPrintingEnabled())
+
+	// Verify single consolidated event was emitted: app:variables_changed
+	evts := events.getEvents()
+	testutil.ExpectedLen(t, evts, 1)
+	testutil.ExpectedEqual(t, evts[0].Name, "app:variables_changed")
+
+	appVar, ok := evts[0].Data[0].(AppVariable)
+	testutil.ExpectedTrue(t, ok, "expected payload to be AppVariable")
+	testutil.ExpectedEqual(t, appVar.IPAddress, util.LocalAddr(srv.Port, true))
+	testutil.ExpectedTrue(t, appVar.NetworkPrintingEnabled)
 }
 
 func TestApp_GetTroubleshootInfo(t *testing.T) {
@@ -326,4 +522,74 @@ func TestApp_GetTroubleshootInfo(t *testing.T) {
 	testutil.ExpectedTrue(t, info.Port > 0)
 	testutil.ExpectedNotEqual(t, info.Subnet, "")
 	testutil.ExpectedNotEqual(t, info.LocalIP, "")
+}
+
+func TestApp_NotifyAppVariablesChanged(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	port, err := cfg.ResolvePort()
+	testutil.ExpectedNoError(t, err)
+
+	mgr := printer.NewManager(cfg)
+	srv := server.New(port, mgr, nil)
+	defer srv.Stop()
+
+	events := &fakeEvents{}
+	app := &App{
+		ctx:            context.Background(),
+		config:         cfg,
+		webserver:      srv,
+		printerManager: mgr,
+		events:         events,
+		autoStart: &autostart.App{
+			Name:        "obox-app",
+			DisplayName: "Obox App",
+			Exec:        []string{os.Args[0]},
+		},
+	}
+
+	app.notifyAppVariablesChanged()
+
+	evts := events.getEvents()
+	testutil.ExpectedLen(t, evts, 1)
+	testutil.ExpectedEqual(t, evts[0].Name, "app:variables_changed")
+
+	appVar, ok := evts[0].Data[0].(AppVariable)
+	testutil.ExpectedTrue(t, ok, "expected payload to be AppVariable")
+	testutil.ExpectedEqual(t, appVar.AppID, cfg.GetAppID())
+}
+
+func TestApp_Shutdown_StopsOboxAndServer(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	port := testutil.GetFreePort(t)
+	mgr := printer.NewManager(cfg)
+	osMod := obox.NewManager(port, cfg, app_actions.OboxActionHandler(mgr))
+	srv := server.New(port, mgr, osMod)
+
+	app := &App{
+		ctx:       context.Background(),
+		config:    cfg,
+		webserver: srv,
+		obox:      osMod,
+	}
+
+	app.shutdown(context.Background())
+	testutil.ExpectedFalse(t, srv.Running())
+
+	// Calling shutdown with nil obox should also be safe
+	appNil := &App{
+		ctx:       context.Background(),
+		webserver: srv,
+		obox:      nil,
+	}
+	appNil.shutdown(context.Background())
 }

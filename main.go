@@ -22,6 +22,9 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -30,7 +33,7 @@ var assets embed.FS
 
 func main() {
 	logger.InitLogger()
-	logger.Debugf("Starting ePOS Proxy")
+	logger.Debugf("Starting Obox App")
 
 	app := NewApp()
 
@@ -44,12 +47,11 @@ func main() {
 	}
 
 	err := wails.Run(&options.App{
-		Title:                    "ePOS Proxy",
+		Title:                    "",
 		Width:                    800,
 		Height:                   600,
 		MinWidth:                 700,
 		MinHeight:                500,
-		Menu:                     createMenu(app),
 		EnableDefaultContextMenu: true,
 		WindowStartState:         windowStartState,
 		AssetServer: &assetserver.Options{
@@ -64,7 +66,7 @@ func main() {
 			},
 		},
 		OnBeforeClose: func(ctx context.Context) (prevent bool) {
-			if app.ConfirmQuit() {
+			if app.confirmQuit() {
 				logger.Infof("User confirmed quit")
 				return false
 			}
@@ -75,9 +77,17 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
+		Windows: &windows.Options{
+			DisableWindowIcon: true,
+		},
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarHiddenInset(),
+		},
+		Linux: &linux.Options{},
 	})
 
 	if err != nil {

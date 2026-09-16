@@ -1,5 +1,7 @@
-import { createContext, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useMountTransition } from "../hooks/useMountTransition";
+import { BellIcon } from "../functions/icon";
 import type { ToastType } from "../types";
 
 type ToastContextType = {
@@ -30,6 +32,8 @@ export const ToastContextWrapper = ({ children }: ToastContextWrapper) => {
     type: "success",
   });
 
+  const { mounted, visible } = useMountTransition(toast.show, 200);
+
   const showToast = useCallback(
     (message: string, type: ToastType = "success") => {
       if (toastTimeout.current) {
@@ -57,20 +61,22 @@ export const ToastContextWrapper = ({ children }: ToastContextWrapper) => {
         {children}
       </ToastContext.Provider>
 
-      {createPortal(
-        <div
-          className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white text-sm max-w-xs transition duration-300 ${
-            toast.type === "success" ? "bg-success" : "bg-danger"
-          } ${
-            toast.show
-              ? "opacity-100 translate-x-0 ease-out"
-              : "opacity-0 translate-x-4 ease-in pointer-events-none"
-          }`}
-        >
-          {toast.message}
-        </div>,
-        document.body,
-      )}
+      {mounted &&
+        createPortal(
+          <div
+            className={`fixed top-4 right-4 z-50 flex items-center gap-2.5 px-4 py-3 rounded-lg shadow-lg text-white text-sm max-w-xs transition-all duration-200 ${
+              toast.type === "success" ? "bg-success" : "bg-danger"
+            } ${
+              visible
+                ? "opacity-100 translate-x-0 ease-out"
+                : "opacity-0 translate-x-4 ease-in pointer-events-none"
+            }`}
+          >
+            <BellIcon className="w-4 h-4 shrink-0" />
+            <span className="leading-snug">{toast.message}</span>
+          </div>,
+          document.body,
+        )}
     </>
   );
 };
