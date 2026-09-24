@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"epos-proxy/internal/logger"
-	"epos-proxy/internal/util"
+	"obox-app/internal/logger"
+	"obox-app/internal/util"
 )
 
 var httpClient = &http.Client{Timeout: 5 * time.Second}

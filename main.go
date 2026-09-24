@@ -17,7 +17,7 @@ import (
 	"embed"
 	"os"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -30,7 +30,7 @@ var assets embed.FS
 
 func main() {
 	logger.InitLogger()
-	logger.Debugf("Starting ePOS Proxy")
+	logger.Debugf("Starting Obox App")
 
 	app := NewApp()
 
@@ -44,7 +44,7 @@ func main() {
 	}
 
 	err := wails.Run(&options.App{
-		Title:                    "ePOS Proxy",
+		Title:                    "Obox App",
 		Width:                    800,
 		Height:                   600,
 		MinWidth:                 700,
@@ -55,7 +55,7 @@ func main() {
 			Assets: assets,
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "epos-proxy-single-instance",
+			UniqueId: "obox-app-single-instance",
 			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
 				logger.Warn("Second instance detected, focusing existing window")
 				wailsruntime.WindowShow(app.ctx)

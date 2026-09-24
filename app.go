@@ -7,13 +7,13 @@ import (
 	"runtime"
 	"time"
 
-	"epos-proxy/internal/app_actions"
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/logger"
-	"epos-proxy/internal/obox"
-	"epos-proxy/internal/printer"
-	"epos-proxy/internal/server"
-	"epos-proxy/internal/util"
+	"obox-app/internal/app_actions"
+	"obox-app/internal/config"
+	"obox-app/internal/logger"
+	"obox-app/internal/obox"
+	"obox-app/internal/printer"
+	"obox-app/internal/server"
+	"obox-app/internal/util"
 
 	autostart "github.com/emersion/go-autostart"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -109,8 +109,8 @@ func NewApp() *App {
 	a := &App{}
 
 	a.autoStart = &autostart.App{
-		Name:        "epos-proxy",
-		DisplayName: "ePOS Proxy",
+		Name:        "obox-app",
+		DisplayName: "Obox App",
 		Exec:        []string{os.Args[0]},
 	}
 	a.dialogs = runtimeDialogs{}
@@ -148,7 +148,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) shutdown(ctx context.Context) {
-	logger.Infof("Stopping proxy server")
+	logger.Infof("Stopping Obox App server")
 
 	if a.obox != nil {
 		a.obox.Stop()
@@ -236,7 +236,7 @@ func (a *App) CheckLANPrinterStatus(ip string) bool {
 func (a *App) DownloadLogs() {
 	logger.Debugf("Download logs requested")
 	logDir := logger.LogDirectory()
-	zipName := fmt.Sprintf("epos-proxy-logs-%s.zip",
+	zipName := fmt.Sprintf("obox-app-logs-%s.zip",
 		time.Now().Format("2006-01-02"))
 	logger.Debugf("Creating logs archive: %s", zipName)
 	savePath, err := a.dlg().SaveFile(a.ctx, wailsruntime.SaveDialogOptions{
@@ -368,7 +368,7 @@ func (a *App) ConfirmQuit() bool {
 	result, err := a.dlg().Message(a.ctx, wailsruntime.MessageDialogOptions{
 		Type:          wailsruntime.QuestionDialog,
 		Title:         "Quit Obox App",
-		Message:       "Stopping the proxy will prevent POS from printing receipts.\n\nAre you sure you want to quit?",
+		Message:       "Stopping the Obox App will prevent POS from printing receipts.\n\nAre you sure you want to quit?",
 		Buttons:       []string{"Cancel", "Quit"},
 		DefaultButton: "Cancel",
 	})

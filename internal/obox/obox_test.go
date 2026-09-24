@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/testutil"
 
 	"github.com/gofiber/fiber/v3"
 )

@@ -4,8 +4,8 @@ import (
 	"net"
 	"testing"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/testutil"
 )
 
 func TestValidateIPAddress(t *testing.T) {

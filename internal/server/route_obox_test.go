@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/testutil"
 )
 
 func TestOboxRoutes_Lifecycle(t *testing.T) {

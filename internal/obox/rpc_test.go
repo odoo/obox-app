@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/testutil"
 )
 
 func TestObox_CallOdooPing(t *testing.T) {

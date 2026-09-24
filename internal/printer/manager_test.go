@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestNewManager(t *testing.T) {

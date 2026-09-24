@@ -3,11 +3,11 @@ package server
 import (
 	"testing"
 
-	"epos-proxy/internal/app_actions"
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/obox"
-	"epos-proxy/internal/printer"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/app_actions"
+	"obox-app/internal/config"
+	"obox-app/internal/obox"
+	"obox-app/internal/printer"
+	"obox-app/internal/testutil"
 )
 
 // provides a centralized, clean test server setup for all server package tests.

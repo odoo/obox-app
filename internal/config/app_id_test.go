@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestAppID_GenerateDefaultFormat(t *testing.T) {

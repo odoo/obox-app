@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestZipLogs_Success(t *testing.T) {
@@ -94,14 +94,14 @@ func TestEnableLinuxAutostart(t *testing.T) {
 	err := EnableLinuxAutostart()
 	testutil.ExpectedNoError(t, err)
 
-	desktopFilePath := filepath.Join(tempDir, ".config", "autostart", "epos-proxy.desktop")
+	desktopFilePath := filepath.Join(tempDir, ".config", "autostart", "obox-app.desktop")
 	data, err := os.ReadFile(desktopFilePath)
 	testutil.ExpectedNoError(t, err)
 
 	content := string(data)
 	testutil.ExpectedContains(t, content, "[Desktop Entry]")
 	testutil.ExpectedContains(t, content, "Type=Application")
-	testutil.ExpectedContains(t, content, "Name=ePOS Proxy")
+	testutil.ExpectedContains(t, content, "Name=Obox App")
 	testutil.ExpectedContains(t, content, "Exec=")
 	testutil.ExpectedContains(t, content, "X-GNOME-Autostart-enabled=true")
 }

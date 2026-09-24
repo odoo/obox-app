@@ -2,7 +2,7 @@ package obox
 
 import (
 	"context"
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 
 	"github.com/gofiber/fiber/v3"
 )

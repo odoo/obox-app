@@ -5,10 +5,10 @@ import (
 	"regexp"
 	"strings"
 
-	"epos-proxy/internal/escpos"
-	"epos-proxy/internal/logger"
-	"epos-proxy/internal/obox"
-	"epos-proxy/internal/printer"
+	"obox-app/internal/escpos"
+	"obox-app/internal/logger"
+	"obox-app/internal/obox"
+	"obox-app/internal/printer"
 )
 
 var printerIDRegex = regexp.MustCompile(`^(?:/usb/v1/printer/|/p/)([^/]+)/cgi-bin/epos/service\.cgi$`)

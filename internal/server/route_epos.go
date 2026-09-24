@@ -3,8 +3,8 @@ package server
 import (
 	"errors"
 
-	"epos-proxy/internal/logger"
-	"epos-proxy/internal/printer"
+	"obox-app/internal/logger"
+	"obox-app/internal/printer"
 
 	"github.com/gofiber/fiber/v3"
 )

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/logger"
+	"obox-app/internal/config"
+	"obox-app/internal/logger"
 )
 
 const (

@@ -1,4 +1,4 @@
-# ePOS Proxy
+# Obox App
 
 A lightweight desktop app that exposes your USB Epson printer as a local HTTP endpoint, making it compatible with Odoo Point of Sale.
 
@@ -11,7 +11,7 @@ Download the latest release for your platform from the [Releases](../../releases
 ## Usage
 
 - Connect your printer via USB to your computer
-- Launch ePOS Proxy - the application will detect your printer automatically
+- Launch Obox App - the application will detect your printer automatically
 
 ![screenshot](readme/printer.png)
 

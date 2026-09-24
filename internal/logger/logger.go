@@ -17,12 +17,12 @@ func InitLogger() {
 	if err != nil {
 		Fatalf("Failed to get user config dir: %v", err)
 	}
-	logDir = filepath.Join(dir, "EposProxy", "logs")
+	logDir = filepath.Join(dir, "OboxApp", "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		Fatalf("Failed to create log directory: %v", err)
 	}
 
-	filename := filepath.Join(logDir, "epos-proxy.log")
+	filename := filepath.Join(logDir, "obox-app.log")
 
 	log.SetOutput(&lumberjack.Logger{
 		Filename:   filename,

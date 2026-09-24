@@ -3,8 +3,8 @@ package printer
 import (
 	"errors"
 
-	"epos-proxy/internal/escpos"
-	"epos-proxy/internal/logger"
+	"obox-app/internal/escpos"
+	"obox-app/internal/logger"
 )
 
 func (m *Manager) PrintReceipt(printerID string, body []byte) escpos.EPOSResponse {
