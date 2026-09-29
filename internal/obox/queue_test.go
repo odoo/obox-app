@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestObox_executeAction(t *testing.T) {

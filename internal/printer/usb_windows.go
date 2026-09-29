@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 
 	"github.com/yusufpapurcu/wmi"
 	"golang.org/x/sys/windows/registry"

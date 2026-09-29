@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func boolRef(v bool) *bool {

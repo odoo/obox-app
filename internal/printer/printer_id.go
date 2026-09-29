@@ -2,9 +2,9 @@ package printer
 
 import (
 	"encoding/base64"
-	"epos-proxy/internal/logger"
 	"errors"
 	"fmt"
+	"obox-app/internal/logger"
 	"strings"
 )
 

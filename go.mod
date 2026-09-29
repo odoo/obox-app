@@ -1,4 +1,4 @@
-module epos-proxy
+module obox-app
 
 go 1.25.0
 

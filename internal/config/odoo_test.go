@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestOdooConfig_SetAndPersist(t *testing.T) {

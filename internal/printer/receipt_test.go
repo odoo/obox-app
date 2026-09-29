@@ -3,8 +3,8 @@ package printer
 import (
 	"testing"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/testutil"
 )
 
 func TestManager_PrintReceipt(t *testing.T) {

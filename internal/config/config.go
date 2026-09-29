@@ -13,7 +13,7 @@ import (
 
 var ErrNoAvailablePort = errors.New("no available port in range")
 
-const AppName = "EposProxy"
+const AppName = "OboxApp"
 
 const (
 	PortRangeStart = 4545

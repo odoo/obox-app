@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/logger"
+	"obox-app/internal/config"
+	"obox-app/internal/logger"
 )
 
 const lanContactTimeout = 30 * time.Second

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 )
 
 type QueueAction struct {

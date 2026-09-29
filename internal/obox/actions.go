@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 )
 
 func (m *Manager) executeAction(action QueueAction) {

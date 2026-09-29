@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 
 	"github.com/sirupsen/logrus"
 )
@@ -21,11 +21,11 @@ func TestInitLogger(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 	testutil.ExpectedTrue(t, info.IsDir(), "Expected log path to be a directory")
 
-	logFile := filepath.Join(dir, "epos-proxy.log")
+	logFile := filepath.Join(dir, "obox-app.log")
 	_, err = os.Stat(logFile)
 	testutil.ExpectedNoError(t, err)
 
-	testutil.ExpectedContains(t, dir, "EposProxy")
+	testutil.ExpectedContains(t, dir, "OboxApp")
 	testutil.ExpectedContains(t, dir, "logs")
 }
 

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"epos-proxy/internal/config"
-	"epos-proxy/internal/obox"
-	"epos-proxy/internal/printer"
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/config"
+	"obox-app/internal/obox"
+	"obox-app/internal/printer"
+	"obox-app/internal/testutil"
 )
 
 func TestExtractPrinterID(t *testing.T) {

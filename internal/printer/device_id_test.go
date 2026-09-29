@@ -3,7 +3,7 @@ package printer
 import (
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestSanitizeDeviceID(t *testing.T) {
