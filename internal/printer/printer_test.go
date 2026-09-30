@@ -133,7 +133,7 @@ func TestPrinter_WriteLAN_Success(t *testing.T) {
 		testutil.ExpectedBytesEqual(t, received, payload)
 		mu.Unlock()
 	case <-time.After(3 * time.Second):
-		t.Fatal("Timed out waiting for LAN write payload")
+		testutil.ExpectedTrue(t, false, "Timed out waiting for LAN write payload")
 	}
 }
 

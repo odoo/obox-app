@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"epos-proxy/internal/config"
 	"epos-proxy/internal/testutil"
 )
 
 func TestNewManager(t *testing.T) {
-	mgr := NewManager()
+	mgr := NewManager(nil)
 	testutil.ExpectedNotNil(t, mgr)
 	testutil.ExpectedNotNil(t, mgr.printers)
 }
@@ -61,7 +62,14 @@ func TestManager_LANPrinterIntegration(t *testing.T) {
 	})
 	testutil.ExpectedNoError(t, err)
 
-	mgr := NewManager()
+	cfg := &config.Manager{
+		Data: config.AppConfig{
+			LANPrinters: []string{
+				"127.0.0.1",
+			},
+		},
+	}
+	mgr := NewManager(cfg)
 	printerID := EncodeLANPrinterID("127.0.0.1")
 
 	testPayload := []byte("TEST PRINT DATA FOR LAN")
@@ -73,7 +81,7 @@ func TestManager_LANPrinterIntegration(t *testing.T) {
 		testutil.ExpectedTrue(t, res.OK)
 		testutil.ExpectedNoError(t, res.Err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("Timed out waiting for print job reply")
+		testutil.ExpectedTrue(t, false, "Timed out waiting for print job reply")
 	}
 
 	select {
@@ -82,12 +90,19 @@ func TestManager_LANPrinterIntegration(t *testing.T) {
 		testutil.ExpectedBytesEqual(t, receivedData, testPayload)
 		mu.Unlock()
 	case <-time.After(3 * time.Second):
-		t.Fatal("Timed out waiting for mock printer server to receive data")
+		testutil.ExpectedTrue(t, false, "Timed out waiting for mock printer server to receive data")
 	}
 }
 
 func TestManager_Get_Error_And_Reusing(t *testing.T) {
-	mgr := NewManager()
+	cfg := &config.Manager{
+		Data: config.AppConfig{
+			LANPrinters: []string{
+				"127.0.0.1",
+			},
+		},
+	}
+	mgr := NewManager(cfg)
 
 	// 1. Unreachable LAN printer returns error
 	_, err := mgr.Get(EncodeLANPrinterID("127.0.0.254"))
@@ -109,11 +124,84 @@ func TestManager_Get_Error_And_Reusing(t *testing.T) {
 }
 
 func TestManager_WriteAsync_PrinterNotFound(t *testing.T) {
-	mgr := NewManager()
+	mgr := NewManager(nil)
 
 	// Non-existent USB printer
 	nonExistentID := "czpOT05fRVhJU1RFTlRfU0VSSUFMCg"
 	replyChan, err := mgr.WriteAsync(nonExistentID, []byte("data"))
 	testutil.ExpectedError(t, err)
 	testutil.ExpectedNil(t, replyChan)
+}
+
+func TestManager_ConvertBody(t *testing.T) {
+	mgr := NewManager(nil)
+	xmlPayload := []byte(`<epos-print><text>Test Receipt</text></epos-print>`)
+
+	convert := func(m *Manager, id string, payload []byte) ([]byte, error) {
+		p := &Printer{}
+		m.setProtocol(id, p)
+		return p.ConvertBody(payload)
+	}
+
+	// 1. Standard ESCPOS printer (LAN or Epson VID:PID)
+	epsonID, err := encodePrinterID(&LibUsbPrinter{VidPid: "04b8:0202", Serial: "123"})
+	testutil.ExpectedNoError(t, err)
+	dataStandard, err := convert(mgr, epsonID, xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, len(dataStandard) > 0)
+
+	// 2. Partial ESCPOS printer (STMicroelectronics 0483:5720) -> raster image
+	partialID, err := encodePrinterID(&LibUsbPrinter{VidPid: "0483:5720", Serial: "456"})
+	testutil.ExpectedNoError(t, err)
+	dataPartial, err := convert(mgr, partialID, xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, len(dataPartial) > 0)
+	// Partial ESC/POS starts with GS v 0 raster command (0x1d 0x76 0x30 0x00)
+	testutil.ExpectedEqual(t, dataPartial[0], byte(0x1d))
+	testutil.ExpectedEqual(t, dataPartial[1], byte(0x76))
+	testutil.ExpectedEqual(t, dataPartial[2], byte(0x30))
+	testutil.ExpectedEqual(t, dataPartial[3], byte(0x00))
+
+	// 3. Resolved printer converts according to its protocol and padding
+	partialPrinter := &Printer{protocol: ProtocolESCPOSPartial}
+	dataFromPrinter, err := partialPrinter.ConvertBody(xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, dataFromPrinter[0], byte(0x1d))
+	testutil.ExpectedEqual(t, dataFromPrinter[1], byte(0x76))
+
+	// 4. Invalid XML returns error
+	_, err = convert(mgr, epsonID, []byte("invalid xml"))
+	testutil.ExpectedError(t, err)
+
+	// 5. Configured Bluetooth and LAN printers
+	cfg := &config.Manager{
+		Data: config.AppConfig{
+			BluetoothPrinters: []config.BluetoothPrinterConfig{
+				{Address: "11:22:33:44:55:66", Name: "BT Partial", Protocol: string(ProtocolESCPOSPartial)},
+				{Address: "22:33:44:55:66:77", Name: "BT Standard", Protocol: string(ProtocolESCPOS)},
+			},
+			LANPrinters: []string{
+				"192.168.1.200",
+			},
+		},
+	}
+	mgrWithCfg := NewManager(cfg)
+
+	// BT Partial -> raster
+	btPartialData, err := convert(mgrWithCfg, encodeBluetoothPrinterID("11:22:33:44:55:66"), xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, btPartialData[0], byte(0x1d))
+	testutil.ExpectedEqual(t, btPartialData[1], byte(0x76))
+
+	// BT Standard -> ESCPOS
+	btStandardData, err := convert(mgrWithCfg, encodeBluetoothPrinterID("22:33:44:55:66:77"), xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, len(btStandardData) > 0)
+	testutil.ExpectedNotEqual(t, btStandardData[0], byte(0x1d))
+
+	// LAN -> ESCPOS
+	lanStandardData, err := convert(mgrWithCfg, EncodeLANPrinterID("192.168.1.200"), xmlPayload)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, len(lanStandardData) > 0)
+	testutil.ExpectedNotEqual(t, lanStandardData[0], byte(0x1d))
 }

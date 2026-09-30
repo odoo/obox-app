@@ -34,7 +34,7 @@ func encodePrinterID(libUsbPrinter *LibUsbPrinter) (string, error) {
 	}
 
 	base := strings.Join(parts, "|")
-	id := base64.RawURLEncoding.EncodeToString([]byte(base))
+	id := "usb_" + base64.RawURLEncoding.EncodeToString([]byte(base))
 	logger.Infof("LibUsbPrinter: %v | base: %s | encoded id: %s", libUsbPrinter, base, id)
 	return id, nil
 }
@@ -42,7 +42,7 @@ func encodePrinterID(libUsbPrinter *LibUsbPrinter) (string, error) {
 var ErrInvalidPrinterID = errors.New("invalid printer ID format")
 
 func decodePrinterID(id string) (*ID, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(id)
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(id, "usb_"))
 	if err != nil {
 		return nil, ErrInvalidPrinterID
 	}
@@ -80,11 +80,11 @@ func decodePrinterID(id string) (*ID, error) {
 }
 
 func EncodeLANPrinterID(ip string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte("l:" + ip))
+	return "lan_" + base64.RawURLEncoding.EncodeToString([]byte("l:"+ip))
 }
 
-func DecodeLANPrinterID(id string) (string, bool) {
-	decoded, err := base64.RawURLEncoding.DecodeString(id)
+func decodeLANPrinterID(id string) (string, bool) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(id, "lan_"))
 	if err != nil {
 		return "", false
 	}
@@ -98,4 +98,33 @@ func DecodeLANPrinterID(id string) (string, bool) {
 	}
 
 	return string(decoded[2:]), true
+}
+
+func encodeBluetoothPrinterID(mac string) string {
+	return "bt_" + base64.RawURLEncoding.EncodeToString([]byte("b:"+mac))
+}
+
+func decodeBluetoothPrinterID(id string) (string, bool) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(id, "bt_"))
+	if err != nil {
+		return "", false
+	}
+	if len(decoded) < 3 || decoded[1] != ':' || decoded[0] != 'b' {
+		return "", false
+	}
+
+	return string(decoded[2:]), true
+}
+
+func getPrinterKind(id string) ConnKind {
+	if strings.HasPrefix(id, "usb_") {
+		return ConnKindUSB
+	}
+	if strings.HasPrefix(id, "lan_") {
+		return ConnKindLAN
+	}
+	if strings.HasPrefix(id, "bt_") {
+		return ConnKindBT
+	}
+	return ""
 }

@@ -58,7 +58,7 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
+	mgr := printer.NewManager(cfg)
 	srv := server.New(port, mgr)
 	defer srv.Stop()
 
@@ -77,7 +77,7 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	printers := app.Printers()
 	foundLAN := false
 	for _, p := range printers.Printers {
-		if p.IsLAN && p.LANIp == "192.168.1.100" {
+		if p.ConnectionType == printer.ConnKindLAN && p.LANIp == "192.168.1.100" {
 			foundLAN = true
 			testutil.ExpectedEqual(t, p.Type, string(printer.TypeReceipt))
 			testutil.ExpectedEqual(t, p.Name, "Network - 192.168.1.100")
@@ -87,32 +87,37 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	testutil.ExpectedTrue(t, foundLAN, "Expected to find configured LAN printer in printer status")
 }
 
-func TestApp_AddLANPrinter(t *testing.T) {
+func TestApp_AddPrinter_LAN(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
 
 	cfg, err := config.NewManager()
 	testutil.ExpectedNoError(t, err)
 
-	app := &App{config: cfg}
+	mgr := printer.NewManager(cfg)
+	app := &App{config: cfg, printerManager: mgr}
+
+	// Unsupported connection type.
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: "usb", Address: "127.0.0.1"})
+	testutil.ExpectedError(t, err)
 
 	// Invalid IP format.
-	err = app.AddLANPrinter("not.an.ip")
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindLAN, Address: "not.an.ip", Protocol: printer.ProtocolESCPOS})
 	testutil.ExpectedError(t, err)
 
 	// Empty IP.
-	err = app.AddLANPrinter("  ")
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindLAN, Address: "  ", Protocol: printer.ProtocolESCPOS})
 	testutil.ExpectedError(t, err)
 
 	// Unreachable printer.
-	err = app.AddLANPrinter("127.0.0.254")
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindLAN, Address: "127.0.0.254", Protocol: printer.ProtocolESCPOS})
 	testutil.ExpectedError(t, err)
 
-	// Reachable printer.
+	// Reachable printer with ESCPOS default.
 	_, _, err = testutil.StartMockTCPServer(t)
 	testutil.ExpectedNoError(t, err)
 
-	err = app.AddLANPrinter("127.0.0.1")
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindLAN, Address: "127.0.0.1", Protocol: printer.ProtocolESCPOS})
 	testutil.ExpectedNoError(t, err)
 
 	printers := cfg.GetLANPrinters()
@@ -296,7 +301,7 @@ func TestApp_NetworkPrintingEnabled(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
+	mgr := printer.NewManager(nil)
 	srv := server.New(port, mgr)
 	defer srv.Stop()
 
@@ -326,4 +331,70 @@ func TestApp_GetTroubleshootInfo(t *testing.T) {
 	testutil.ExpectedTrue(t, info.Port > 0)
 	testutil.ExpectedNotEqual(t, info.Subnet, "")
 	testutil.ExpectedNotEqual(t, info.LocalIP, "")
+}
+
+func TestApp_AddBluetoothPrinter_Validation(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	app := &App{config: cfg, printerManager: printer.NewManager(cfg)}
+
+	// 1. Invalid MAC address
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindBT, Address: "invalid-mac", Name: "My Printer", Protocol: printer.ProtocolESCPOS})
+	testutil.ExpectedError(t, err)
+
+	// 2. Empty address
+	err = app.AddPrinter(printer.RawPrinter{ConnectionType: printer.ConnKindBT, Address: "", Name: "My Printer", Protocol: printer.ProtocolESCPOS})
+	testutil.ExpectedError(t, err)
+}
+
+func TestApp_ConfirmRemoveBluetoothPrinter(t *testing.T) {
+	const mac = "AA:BB:CC:DD:EE:FF"
+
+	tests := []struct {
+		name          string
+		dialogResult  string
+		dialogErr     error
+		expectRemoved bool
+		expectErr     bool
+	}{
+		{name: "confirm removes bluetooth printer", dialogResult: "Confirm", expectRemoved: true},
+		{name: "linux yes button removes bluetooth printer", dialogResult: "Yes", expectRemoved: true},
+		{name: "cancel keeps bluetooth printer", dialogResult: "Cancel"},
+		{name: "dialog error keeps bluetooth printer", dialogErr: errors.New("no display"), expectErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+
+			cfg, err := config.NewManager()
+			testutil.ExpectedNoError(t, err)
+			testutil.ExpectedNoError(t, cfg.AddBluetoothPrinter(mac, "Test BT Printer", "ESCPOS", 0))
+
+			dialogs := &fakeDialogs{messageResult: tc.dialogResult, messageErr: tc.dialogErr}
+			app := &App{config: cfg, dialogs: dialogs, printerManager: printer.NewManager(cfg)}
+
+			removed, err := app.ConfirmRemoveBluetoothPrinter(mac)
+
+			if tc.expectErr {
+				testutil.ExpectedError(t, err)
+			} else {
+				testutil.ExpectedNoError(t, err)
+			}
+			testutil.ExpectedEqual(t, removed, tc.expectRemoved)
+
+			expectedRemaining := 1
+			if tc.expectRemoved {
+				expectedRemaining = 0
+			}
+			testutil.ExpectedLen(t, cfg.GetBluetoothPrinters(), expectedRemaining)
+
+			testutil.ExpectedLen(t, dialogs.messages, 1)
+			testutil.ExpectedContains(t, dialogs.messages[0].Message, mac)
+		})
+	}
 }

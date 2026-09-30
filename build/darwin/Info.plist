@@ -59,5 +59,9 @@
           {{end}}
         </array>
         {{end}}
+        <key>NSBluetoothAlwaysUsageDescription</key>
+        <string>This app requires Bluetooth access to connect to and print on Bluetooth receipt printers.</string>
+        <key>NSBluetoothPeripheralUsageDescription</key>
+        <string>This app requires Bluetooth access to connect to and print on Bluetooth receipt printers.</string>
     </dict>
 </plist>

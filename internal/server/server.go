@@ -73,14 +73,27 @@ func New(port int, mgr *printer.Manager) *Server {
 
 func printData(mgr *printer.Manager, ctx fiber.Ctx, printerID string) error {
 	logger.Debugf("Processing print job for printer: %s", printerID)
-	jobData, err := escpos.ParseXML(ctx.Body())
+
+	if err := escpos.ValidateXML(ctx.Body()); err != nil {
+		logger.Errorf("XML validation error: %v", err)
+		return ctx.XML(EPOSResponse{Success: false, Code: "SchemaError", Status: ""})
+	}
+
+	p, err := mgr.Get(printerID)
+	if err != nil {
+		retCode := "EX_BADPORT"
+		logger.Errorf("Print error [%s]: %v, Printer ID: %s", retCode, err, printerID)
+		return ctx.XML(EPOSResponse{Success: false, Code: retCode, Status: ""})
+	}
+
+	jobData, err := p.ConvertBody(ctx.Body())
 	if err != nil {
 		logger.Errorf("XML parsing error: %v", err)
 		return ctx.XML(EPOSResponse{Success: false, Code: "SchemaError", Status: ""})
 	}
 	logger.Debug("XML parsed successfully")
 
-	reply, err := mgr.WriteAsync(printerID, jobData)
+	reply, err := p.WriteAsync(jobData)
 	if err == nil {
 		logger.Debug("Print job queued")
 		result := <-reply

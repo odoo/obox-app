@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"epos-proxy/internal/config"
 	"epos-proxy/internal/logger"
 )
 
@@ -32,8 +31,8 @@ func CheckLANPrinter(ip string) error {
 	return nil
 }
 
-func ListLANPrinters(cfg *config.Manager) []LANPrinterInfo {
-	ips := cfg.GetLANPrinters()
+func (m *Manager) ListLANPrinters() []LANPrinterInfo {
+	ips := m.cfg.GetLANPrinters()
 	logger.Debugf("Listing %d configured LAN printers", len(ips))
 	result := make([]LANPrinterInfo, len(ips))
 
@@ -60,4 +59,24 @@ func ValidateIPAddress(ip string) (string, error) {
 	}
 
 	return ip, nil
+}
+
+func (m *Manager) AddLANPrinter(p RawPrinter) error {
+	logger.Debugf("Adding LAN printer: %s", p.Address)
+
+	ip, err := ValidateIPAddress(p.Address)
+	if err != nil {
+		return fmt.Errorf("invalid IP address: %s, error: %v", p.Address, err)
+	}
+
+	if err := CheckLANPrinter(ip); err != nil {
+		return fmt.Errorf("LAN printer unreachable: %s, error: %v", ip, err)
+	}
+
+	if err := m.cfg.AddLanEposPrinter(ip); err != nil {
+		return fmt.Errorf("failed to save LAN printer: %s, error: %v", ip, err)
+	}
+
+	logger.Debugf("LAN printer added successfully: %s", ip)
+	return nil
 }
