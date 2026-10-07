@@ -17,11 +17,11 @@ jobs:
       fail-fast: false
       matrix:
         build:
-          - name: 'epos-proxy-linux64'
+          - name: 'obox-app-linux64'
             platform: 'linux/amd64'
             os: 'ubuntu-latest'
 
-          - name: 'epos-proxy-win64'
+          - name: 'obox-app-win64'
             platform: 'windows/amd64'
             os: 'windows-latest'
 

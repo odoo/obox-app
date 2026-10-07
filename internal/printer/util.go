@@ -1,7 +1,7 @@
 package printer
 
 import (
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 	"strconv"
 	"strings"
 

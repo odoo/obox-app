@@ -30,7 +30,7 @@ export default function LibusbFixDialog({ printerName }: { printerName: string; 
       title={title}
       openButton={
         <div className="mt-6 text-center">
-          <div className="flex-1 border bg-odoo text-white hover:bg-odoo-dark rounded-lg px-4 py-2 text-center cursor-pointer mt-2 text-sm font-medium">
+          <div className="border border-transparent bg-odoo text-white hover:bg-odoo-dark rounded-lg px-4 py-2 cursor-pointer mt-2 text-sm font-medium">
             {`Fix - ${title}`}
           </div>
         </div>

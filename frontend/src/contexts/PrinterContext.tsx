@@ -1,14 +1,12 @@
-import { main } from "../../wailsjs/go/models";
+import { printer } from "../../wailsjs/go/models";
 import {
   AddLANPrinter,
   CheckLANPrinterStatus,
   ConfirmRemoveLANPrinter,
-  IsNetworkPrintingEnabled,
   Printers,
 } from "../../wailsjs/go/main/App";
-import { EventsOn } from "../../wailsjs/runtime/runtime";
-
-import { createContext, useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { AppContext } from "./AppContext";
 
 const POLL_INTERVAL = 5000;
 const FETCH_ERROR = "Failed to retrieve printer status. Please try again.";
@@ -23,13 +21,12 @@ type ActionStatus = {
 type PrinterContextType = {
   setters: {};
   data: {
-    printers: main.Printers | null;
+    printers: printer.DiscoveryResult | null;
     lanStatus: PrinterLanStatusByIp;
     fetchError: string | null;
-    networkPrintingEnabled: boolean;
   };
   actions: {
-    removeLanPrinter: (printer: main.Printer) => Promise<ActionStatus>;
+    removeLanPrinter: (printer: printer.Device) => Promise<ActionStatus>;
     addLanPrinter: (ip: string) => Promise<ActionStatus>;
   };
 };
@@ -41,10 +38,9 @@ interface PrinterContextWrapper {
 }
 
 export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
-  const [printers, setPrinters] = useState<main.Printers | null>(null);
+  const [printers, setPrinters] = useState<printer.DiscoveryResult | null>(null);
   const [lanStatus, setLanStatus] = useState<PrinterLanStatusByIp>({});
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [networkPrintingEnabled, setNetworkPrintingEnabledState] = useState(false);
 
   // A status sweep can outlast the poll interval (USB rescan plus a 3s dial
   // timeout per unreachable LAN printer), so ticks skip while one is running.
@@ -106,7 +102,7 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     [checkLanPrinterStatus],
   );
 
-  const removeLanPrinter = async (printer: main.Printer) => {
+  const removeLanPrinter = async (printer: printer.Device) => {
     if (!printer.isLAN || !printer.lanIp) {
       console.error("Attempted to remove a non-LAN printer:", printer);
       return {
@@ -195,37 +191,10 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     };
   }, [checkAppStatus]);
 
-  const loadNetworkPrintingStatus = useCallback(async () => {
-    try {
-      const enabled = await IsNetworkPrintingEnabled();
-      setNetworkPrintingEnabledState(enabled);
-    } catch (err) {
-      console.error("Failed to load network printing status", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadNetworkPrintingStatus();
-  }, [loadNetworkPrintingStatus]);
-
-  useEffect(() => {
-    return EventsOn("network-printing-changed", () => {
-      loadNetworkPrintingStatus();
-      checkAppStatus(true);
-    });
-  }, [loadNetworkPrintingStatus, checkAppStatus]);
 
   const setters = {};
-  const actions = {
-    removeLanPrinter,
-    addLanPrinter,
-  };
-  const data = {
-    printers: printers,
-    lanStatus,
-    fetchError,
-    networkPrintingEnabled,
-  };
+  const actions = { removeLanPrinter, addLanPrinter, };
+  const data = { printers: printers, lanStatus, fetchError, };
 
   return (
     <PrinterContext.Provider value={{ data, setters, actions }}>
