@@ -21,6 +21,7 @@ interface DialogProps {
   actions?: DialogAction[];
   onClose?: () => void;
   onOpen?: () => void;
+  maxWidth?: string;
   showTitleDivider?: boolean;
   /** Bump this value (e.g. a counter) to open the dialog programmatically, without an openButton. */
   openSignal?: number;
@@ -34,6 +35,7 @@ export default function Dialog({
   onClose,
   onOpen,
   showTitleDivider = false,
+  maxWidth = "max-w-sm",
   openSignal,
 }: DialogProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -132,7 +134,7 @@ export default function Dialog({
               onClick={() => close()}
             />
 
-            <div className={`relative bg-white rounded-2xl w-full max-w-sm max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto overflow-x-hidden p-6 ${showTitleDivider ? "pt-4" : ""}`}>
+            <div className={`relative bg-white rounded-2xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto overflow-x-hidden p-6 transition-all duration-200 ease-out transform ${isOpen ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-2"} ${showTitleDivider ? "pt-4" : ""}`}>
               <div className={`flex items-center justify-between  ${showTitleDivider ? "pb-3 mb-4 border-b border-gray-200" : "mb-5"}`}>
                 <div className="text-lg font-medium">{title}</div>
                 <CloseButton onClick={() => close()} />

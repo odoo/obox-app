@@ -28,9 +28,7 @@ type Server struct {
 }
 
 func New(port int, mgr *printer.Manager) *Server {
-	app := fiber.New(fiber.Config{
-		AppName: "ePOS proxy",
-	})
+	app := fiber.New(fiber.Config{AppName: "Obox App"})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:        []string{"*"},
 		AllowPrivateNetwork: true,

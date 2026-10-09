@@ -3,6 +3,7 @@ package util
 import (
 	"net"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -84,7 +85,16 @@ func TestGetNetworkInfo(t *testing.T) {
 }
 
 func TestRunCmd_Success(t *testing.T) {
-	out, err := runCmd("echo", "hello")
+	var cmd string
+	var args []string
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/c", "echo hello"}
+	} else {
+		cmd = "echo"
+		args = []string{"hello"}
+	}
+	out, err := runCmd(cmd, args...)
 	testutil.ExpectedNoError(t, err)
 	testutil.ExpectedTrue(t, strings.Contains(out, "hello"),
 		"expected output to contain 'hello', got: "+out)
@@ -96,6 +106,14 @@ func TestRunCmd_CommandNotFound(t *testing.T) {
 }
 
 func TestRunCmd_NonZeroExit(t *testing.T) {
-	_, err := runCmd("false")
+	var cmd string
+	var args []string
+	if runtime.GOOS == "windows" {
+		cmd = "cmd"
+		args = []string{"/c", "exit 1"}
+	} else {
+		cmd = "false"
+	}
+	_, err := runCmd(cmd, args...)
 	testutil.ExpectedError(t, err)
 }

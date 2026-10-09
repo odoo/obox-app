@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"obox-app/buildinfo"
 	"os"
 	"path/filepath"
 
@@ -39,7 +40,7 @@ func InitLogger() {
 	})
 
 	log.SetLevel(logrus.InfoLevel)
-	Info("Logger initialized")
+	Infof("Starting Obox App v: %s", buildinfo.GetVersionInfo())
 }
 
 // Wrappers
@@ -53,5 +54,19 @@ func Fatal(args ...interface{})                 { log.Fatal(args...) }
 func Fatalf(format string, args ...interface{}) { log.Fatalf(format, args...) }
 func Debug(args ...interface{})                 { log.Debug(args...) }
 func Debugf(format string, args ...interface{}) { log.Debugf(format, args...) }
+
+func SetDebugMode(enabled bool) {
+	if enabled {
+		log.SetLevel(logrus.DebugLevel)
+		Infof("Debug mode enabled (Debug log level)")
+	} else {
+		log.SetLevel(logrus.InfoLevel)
+		Infof("Debug mode disabled (Info log level)")
+	}
+}
+
+func IsDebugMode() bool {
+	return log.GetLevel() >= logrus.DebugLevel
+}
 
 func LogDirectory() string { return logDir }
