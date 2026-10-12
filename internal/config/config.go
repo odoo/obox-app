@@ -26,6 +26,12 @@ type AppConfig struct {
 	LANPrinters     []string   `json:"lan_printers,omitempty"`
 	NetworkPrinting bool       `json:"network_printing"`
 	Odoo            OdooConfig `json:"odoo"`
+
+	WebViewURL         string   `json:"webview_url,omitempty"`
+	WebViewPIN         string   `json:"webview_pin"`
+	WebViewEnabled     bool     `json:"webview_enabled"`
+	WebViewFullscreen  bool     `json:"webview_fullscreen"`
+	WebViewExitCorners []string `json:"webview_exit_corners"`
 }
 
 func defaults() AppConfig {
@@ -35,6 +41,10 @@ func defaults() AppConfig {
 		NetworkPrinting: false,
 		LANPrinters:     []string{},
 		Odoo:            OdooConfig{},
+
+		WebViewPIN:         "0000",
+		WebViewExitCorners: []string{"top-right"},
+		WebViewFullscreen:  false,
 	}
 }
 

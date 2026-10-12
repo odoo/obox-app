@@ -15,7 +15,7 @@ const (
 
 var (
 	// CmdCut full paper cut.
-	CmdCut = []byte{GS, 0x56, 0x41, LF}
+	CmdCut = []byte{LF, GS, 0x56, 0x41, LF}
 
 	CmdPulse = []byte{
 		ESC, 0x3D, 0x01,

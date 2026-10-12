@@ -6,6 +6,7 @@ import { renderFormattedText } from "../functions/renderFormattedText";
 import Dialog, { type ActionType } from "./Dialog";
 
 export default function NetworkPrintingEnabledDialog() {
+  const { data: { isWails } } = useContext(AppContext);
   const [openSignal, setOpenSignal] = useState(0);
   const [localIp, setLocalIp] = useState<string | null>(null);
   const isInitialMount = useRef(true);
@@ -14,9 +15,7 @@ export default function NetworkPrintingEnabledDialog() {
   const prevEnabled = useRef(networkPrintingEnabled);
 
   useEffect(() => {
-    if (isLoading) {
-      return;
-    }
+    if (!isWails || isLoading) return;
 
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -32,7 +31,7 @@ export default function NetworkPrintingEnabledDialog() {
     }
 
     prevEnabled.current = networkPrintingEnabled;
-  }, [networkPrintingEnabled, isLoading]);
+  }, [networkPrintingEnabled, isLoading, isWails]);
 
   return (
     <Dialog

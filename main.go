@@ -1,23 +1,14 @@
-// NOTE: this block is currently INERT. cgo only honours a preamble that
-// immediately precedes the `import "C"` line; because "C" is imported inside
-// the grouped import block below, these flags have never been applied and
-// libusb is linked dynamically via gousb's pkg-config. Left as-is pending a
-// decision — activating it needs the include path corrected to
-// -I/opt/homebrew/opt/libusb/include for <libusb-1.0/libusb.h> to resolve.
-/*
-#cgo darwin CFLAGS:  -I/opt/homebrew/opt/libusb/include/libusb-1.0
-#cgo darwin LDFLAGS: /opt/homebrew/opt/libusb/lib/libusb-1.0.a -framework IOKit -framework CoreFoundation
-#include <libusb-1.0/libusb.h>
-*/
 package main
 
 import (
-	"C"
 	"context"
 	"embed"
+	"net/http"
 	"os"
+	"slices"
 
 	"obox-app/internal/logger"
+	"obox-app/override/menubar"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -31,20 +22,62 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Permissions-Policy", "local-network-access=*, private-network-access=*, local-network=*, loopback-network=*")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
+	// Configure WebView2 browser arguments to permit Local Network Access (LNA / PNA)
+	// and bypass restrictive preflight blocking inside embedded webviews where user prompts cannot be shown.
+	pnaFlags := "--disable-features=PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests"
+	if existing := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"); existing == "" {
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", pnaFlags)
+	} else {
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", existing+" "+pnaFlags)
+	}
+
 	logger.InitLogger()
 	logger.Debugf("Starting Obox App")
 
 	app := NewApp()
 
-	windowStartState := options.Normal
+	if isWindowsService() {
+		logger.Infof("Detected Windows Service context. Starting in native service mode.")
+		runWindowsService(app)
+		return
+	}
+
+	forceKiosk := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--minimized" {
-			logger.Debugf("Application started with --minimized flag")
-			windowStartState = options.Minimised
+		if arg == "--kiosk" || arg == "-kiosk" || arg == "--server" || arg == "-server" {
+			forceKiosk = true
 			break
 		}
 	}
+
+	mode := determineLaunchMode(false, forceKiosk, false)
+	if mode == ModeServer {
+		runServerMode(app)
+		return
+	}
+
+	runNormalMode(app)
+}
+
+func runNormalMode(app *App) {
+	logger.Infof("Starting application in normal Wails mode")
+
+	windowStartState := options.Normal
+	if slices.Contains(os.Args[1:], "--minimized") {
+		logger.Debugf("Application started with --minimized flag")
+		windowStartState = options.Minimised
+	}
+
+	appMenu := createMenu(app)
+	app.appMenu = appMenu
 
 	err := wails.Run(&options.App{
 		Title:                    "",
@@ -52,10 +85,12 @@ func main() {
 		Height:                   600,
 		MinWidth:                 700,
 		MinHeight:                500,
-		EnableDefaultContextMenu: true,
+		Menu:                     appMenu,
+		EnableDefaultContextMenu: false,
 		WindowStartState:         windowStartState,
 		AssetServer: &assetserver.Options{
-			Assets: assets,
+			Assets:     assets,
+			Middleware: securityHeadersMiddleware,
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "obox-app-single-instance",
@@ -78,6 +113,21 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
+		OnDomReady: func(ctx context.Context) {
+			menubar.DisableContextMenu()
+			if !app.IsRenderingWebApp() {
+				if !app.IsPendingPinAuth() && !app.IsInManagement() {
+					if app.config.GetWebViewEnabled() {
+						if targetURL := app.config.GetWebViewURL(); targetURL != "" {
+							app.NavigateToWebApp()
+							return
+						}
+					}
+				}
+			} else {
+				app.InjectGestureScript()
+			}
+		},
 		Bind: []interface{}{
 			app,
 		},
@@ -94,4 +144,8 @@ func main() {
 		logger.Errorf("Application crashed: %v", err)
 	}
 
+	if app.webserver != nil {
+		_ = app.webserver.Stop()
+	}
+	os.Exit(0)
 }

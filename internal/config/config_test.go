@@ -229,3 +229,107 @@ func TestFindAvailablePort_RangeExhausted(t *testing.T) {
 	testutil.ExpectedTrue(t, errors.Is(err, ErrNoAvailablePort))
 	testutil.ExpectedEqual(t, result, 0)
 }
+
+func TestWebViewConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	cm := &Manager{
+		path: filepath.Join(tempDir, "config.json"),
+		Data: defaults(),
+	}
+
+	testutil.ExpectedEqual(t, cm.GetWebViewEnabled(), false)
+	testutil.ExpectedEqual(t, cm.GetWebViewURL(), "")
+	testutil.ExpectedEqual(t, cm.HasWebViewPIN(), true) // default is "0000"
+	testutil.ExpectedTrue(t, cm.CheckWebViewPIN("0000"))
+	testutil.ExpectedFalse(t, cm.CheckWebViewPIN("1234"))
+	testutil.ExpectedEqual(t, cm.GetWebViewFullscreen(), false) // default is false
+
+	// Test Fullscreen toggle
+	err := cm.SetWebViewFullscreen(true)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, cm.GetWebViewFullscreen(), true)
+	err = cm.SetWebViewFullscreen(false)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, cm.GetWebViewFullscreen(), false)
+
+	// Test Invalid URLs
+	err = cm.SetWebViewURL("not_a_url")
+	testutil.ExpectedError(t, err)
+
+	err = cm.SetWebViewURL("ftp://example.com")
+	testutil.ExpectedError(t, err)
+
+	err = cm.SetWebViewURL("http://")
+	testutil.ExpectedError(t, err)
+
+	// Test Valid URL
+	err = cm.SetWebViewURL("https://123481892-master-all.runbot313.odoo.com/pos-self/204?access_token=4fcea930b2a1479a")
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, cm.GetWebViewURL(), "https://123481892-master-all.runbot313.odoo.com/pos-self/204?access_token=4fcea930b2a1479a")
+
+	err = cm.SetWebViewURL("https://example.com/pos")
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, cm.GetWebViewURL(), "https://example.com/pos")
+
+	// Test Enabled
+	err = cm.SetWebViewEnabled(true)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, cm.GetWebViewEnabled(), true)
+
+	// Test PIN validation
+	err = cm.SetWebViewPIN("123") // too short
+	testutil.ExpectedError(t, err)
+
+	err = cm.SetWebViewPIN("12345") // too long
+	testutil.ExpectedError(t, err)
+
+	err = cm.SetWebViewPIN("12a4") // non-digit
+	testutil.ExpectedError(t, err)
+
+	err = cm.SetWebViewPIN("9876") // valid
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, cm.CheckWebViewPIN("9876"))
+	testutil.ExpectedFalse(t, cm.CheckWebViewPIN("0000"))
+}
+
+func TestWebViewExitCorner(t *testing.T) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "config.json")
+	cm := &Manager{path: configFile, Data: defaults()}
+
+	// 1. Default should be top-right
+	testutil.ExpectedEqual(t, cm.GetWebViewExitCorner(), "top-right")
+	testutil.ExpectedLen(t, cm.GetWebViewExitCorners(), 1)
+	testutil.ExpectedEqual(t, cm.GetWebViewExitCorners()[0], "top-right")
+
+	// 2. Set multiple valid corners
+	err := cm.SetWebViewExitCorners([]string{"top-left", "top-right", "bottom-right"})
+	testutil.ExpectedNoError(t, err)
+	corners := cm.GetWebViewExitCorners()
+	testutil.ExpectedEqual(t, len(corners), 3)
+	testutil.ExpectedTrue(t, corners[0] == "top-left" && corners[1] == "top-right" && corners[2] == "bottom-right")
+
+	// 3. Set all 4 corners
+	err = cm.SetWebViewExitCorners([]string{"top-left", "top-right", "bottom-left", "bottom-right"})
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedEqual(t, len(cm.GetWebViewExitCorners()), 4)
+
+	// 4. Set invalid corner
+	err = cm.SetWebViewExitCorners([]string{"middle-center"})
+	testutil.ExpectedError(t, err)
+
+	// 5. Empty corners should fail
+	err = cm.SetWebViewExitCorners([]string{})
+	testutil.ExpectedError(t, err)
+}
+
+func TestWebViewFullscreen_DefaultFromEmptyJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "config.json")
+	cm := &Manager{path: configFile, Data: defaults()}
+	err := os.WriteFile(configFile, []byte(`{"webview_url":"https://example.com"}`), 0644)
+	testutil.ExpectedNoError(t, err)
+	err = cm.Load()
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedFalse(t, cm.GetWebViewFullscreen())
+}

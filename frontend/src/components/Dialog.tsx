@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useMountTransition } from "../hooks/useMountTransition";
 import CloseButton from "./CloseButton";
 
-export type ActionType = "primary" | "secondary" | "danger"
+export type ActionType = "primary" | "secondary" | "danger";
 
 export interface DialogAction {
   name: string;
@@ -24,10 +24,24 @@ interface DialogProps {
   showTitleDivider?: boolean;
   /** Bump this value (e.g. a counter) to open the dialog programmatically, without an openButton. */
   openSignal?: number;
+  size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "full";
+  className?: string;
   /** Bump this value to close the dialog programmatically. */
   closeSignal?: number;
   maxWidth?: string;
 }
+
+const sizeClasses: Record<string, string> = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-md",
+  lg: "sm:max-w-lg",
+  xl: "sm:max-w-xl",
+  "2xl": "sm:max-w-2xl",
+  "3xl": "sm:max-w-3xl",
+  "4xl": "sm:max-w-4xl",
+  "5xl": "sm:max-w-5xl",
+  full: "sm:max-w-6xl",
+};
 
 function useSignal(signal: number | undefined, callback: () => void) {
   const prevSignal = useRef(signal);
@@ -52,6 +66,8 @@ export default function Dialog({
   onOpen,
   showTitleDivider = false,
   openSignal,
+  size = "md",
+  className,
   closeSignal,
   maxWidth = "max-w-sm",
 }: DialogProps) {
@@ -150,16 +166,27 @@ export default function Dialog({
               onClick={() => close()}
             />
 
-            <div className={`relative bg-white rounded-2xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto p-6 ${showTitleDivider ? "pt-4" : ""}`}>
-              <div className={`flex items-center justify-between ${showTitleDivider ? "pb-3 mb-4 border-b border-gray-200" : "mb-5"}`}>
-                <div className="text-lg font-medium">{title}</div>
+            <div
+              className={`relative bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-full ${sizeClasses[size] ?? "sm:max-w-md"} max-h-[92vh] sm:max-h-[calc(100vh-2rem)] shadow-2xl flex flex-col overflow-hidden transition-transform ${isOpen ? "translate-y-0" : "translate-y-4 sm:translate-y-0"
+                } ${className ?? ""}`}
+            >
+              {/* Header (fixed at top) */}
+              <div
+                className={`shrink-0 flex items-center justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 ${showTitleDivider ? "border-b border-gray-200" : ""
+                  }`}
+              >
+                <div className="text-base sm:text-lg font-semibold text-gray-800">{title}</div>
                 <CloseButton onClick={() => close()} />
               </div>
 
-              <div>{children}</div>
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 py-2">
+                {children}
+              </div>
 
+              {/* Action Buttons (fixed to bottom) */}
               {actions.length > 0 && (
-                <div className="flex items-center gap-2 pt-4">
+                <div className="shrink-0 flex items-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5 border-t border-gray-200/80 bg-gray-50/95 sm:rounded-b-2xl">
                   {actions.map((action) => {
                     const isActionLoading = loadingAction === action.name;
                     const defaultVariantClass =
@@ -174,7 +201,7 @@ export default function Dialog({
                         key={action.name}
                         type="button"
                         disabled={Boolean(action.disabled) || isActionLoading || Boolean(loadingAction)}
-                        className={action.className ?? `flex-1 rounded-lg px-4 py-2 cursor-pointer text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${defaultVariantClass}`}
+                        className={action.className ?? `flex-1 rounded-lg px-3 sm:px-4 py-2 cursor-pointer text-xs sm:text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${defaultVariantClass}`}
                         onClick={() => handleAction(action)}
                       >
                         {isActionLoading ? "Loading..." : action.label}

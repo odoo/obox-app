@@ -1,12 +1,9 @@
-import { printer } from "../../wailsjs/go/models";
-import {
-  AddLANPrinter,
-  CheckLANPrinterStatus,
-  ConfirmRemoveLANPrinter,
-  Printers,
-} from "../../wailsjs/go/main/App";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { printer } from "../../wailsjs/go/models";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import { AppContext } from "./AppContext";
+import { backendService } from "../services/backend";
+import { usePINGate } from "../hooks/usePINGate";
 
 const POLL_INTERVAL = 5000;
 const FETCH_ERROR = "Failed to retrieve printer status. Please try again.";
@@ -19,7 +16,7 @@ type ActionStatus = {
 };
 
 type PrinterContextType = {
-  setters: {};
+  setters: Record<string, never>;
   data: {
     printers: printer.DiscoveryResult | null;
     lanStatus: PrinterLanStatusByIp;
@@ -38,33 +35,24 @@ interface PrinterContextWrapper {
 }
 
 export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
+  const { data: { isWails } } = useContext(AppContext);
+  const gate = usePINGate();
   const [printers, setPrinters] = useState<printer.DiscoveryResult | null>(null);
   const [lanStatus, setLanStatus] = useState<PrinterLanStatusByIp>({});
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // A status sweep can outlast the poll interval (USB rescan plus a 3s dial
-  // timeout per unreachable LAN printer), so ticks skip while one is running.
   const statusChecksInFlight = useRef(0);
   const pendingLanChecks = useRef<Set<string>>(new Set());
 
   const checkLanPrinterStatus = useCallback(async (ip: string) => {
-    if (pendingLanChecks.current.has(ip)) {
-      return;
-    }
-
+    if (pendingLanChecks.current.has(ip)) return;
     pendingLanChecks.current.add(ip);
-    setLanStatus((prevStatus) =>
-      prevStatus[ip] === undefined
-        ? { ...prevStatus, [ip]: "loading" }
-        : prevStatus,
+    setLanStatus((prev) =>
+      prev[ip] === undefined ? { ...prev, [ip]: "loading" } : prev,
     );
-
     try {
-      const status = await CheckLANPrinterStatus(ip);
-      setLanStatus((prevStatus) => ({
-        ...prevStatus,
-        [ip]: status ? "online" : "offline",
-      }));
+      const result = await backendService.checkLANPrinterStatus(ip);
+      setLanStatus((prev) => ({ ...prev, [ip]: result.online ? "online" : "offline" }));
     } catch (error) {
       console.error(`Failed to check LAN printer status for ${ip}:`, error);
     } finally {
@@ -72,24 +60,17 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     }
   }, []);
 
-  // `force` is for refreshes triggered by a user action: those must not be
-  // dropped just because a poll happens to be in flight, and the in-flight
-  // sweep may have read the printer list before the action landed.
   const checkAppStatus = useCallback(
     async (force = false) => {
-      if (statusChecksInFlight.current > 0 && !force) {
-        return;
-      }
-
+      if (statusChecksInFlight.current > 0 && !force) return;
       statusChecksInFlight.current++;
       try {
-        const data = await Printers();
+        const data = (await backendService.getPrinters()) as unknown as printer.DiscoveryResult;
         setPrinters(data);
         setFetchError(null);
-
-        for (const printer of data.printers) {
-          if (printer.isLAN && printer.lanIp) {
-            checkLanPrinterStatus(printer.lanIp);
+        for (const p of data.printers) {
+          if (p.isLAN && p.lanIp) {
+            checkLanPrinterStatus(p.lanIp);
           }
         }
       } catch (error) {
@@ -102,72 +83,76 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     [checkLanPrinterStatus],
   );
 
-  const removeLanPrinter = async (printer: printer.Device) => {
-    if (!printer.isLAN || !printer.lanIp) {
-      console.error("Attempted to remove a non-LAN printer:", printer);
-      return {
-        status: false,
-        message: "Cannot remove a non-LAN printer",
-      };
+  const removeLanPrinter = async (
+    printer: printer.Device,
+  ): Promise<ActionStatus> => {
+    const lanIp = printer.lanIp;
+    if (!printer.isLAN || !lanIp) {
+      return { status: false, message: "Cannot remove a non-LAN printer" };
     }
-
-    try {
-      const confirmed = await ConfirmRemoveLANPrinter(printer.lanIp);
-      if (!confirmed) {
-        throw new Error("User cancelled the removal of the LAN printer");
+    const res = await gate(async () => {
+      try {
+        if (!isWails) {
+          const confirmed = window.confirm(
+            `Are you sure you want to remove the printer at ${lanIp}?`,
+          );
+          if (!confirmed) {
+            return { status: false, message: "User cancelled the removal" };
+          }
+        }
+        const confirmed = await backendService.removeLANPrinter(lanIp);
+        if (!confirmed) throw new Error("User cancelled the removal");
+        await checkAppStatus(true);
+        return {
+          status: true,
+          message: `Successfully removed LAN printer with IP ${lanIp}`,
+        };
+      } catch (error) {
+        return {
+          status: false,
+          message: `Failed to remove LAN printer: ${error}`,
+        };
       }
+    });
 
-      await checkAppStatus(true);
-      return {
-        status: true,
-        message: `Successfully removed LAN printer with IP ${printer.lanIp}`,
-      };
-    } catch (error) {
-      console.error(
-        `Failed to remove LAN printer with IP ${printer.lanIp}:`,
-        error,
-      );
-      return {
-        status: false,
-        message: `Failed to remove LAN printer with IP ${printer.lanIp}: ${error}`,
-      };
+    if (res === null) {
+      return { status: false, message: "Action cancelled or PIN required" };
     }
+    return res;
   };
 
-  const addLanPrinter = async (ip: string) => {
-    try {
-      await AddLANPrinter(ip);
-      await checkAppStatus(true);
-      return {
-        status: true,
-        message: `Successfully added LAN printer with IP ${ip}`,
-      };
-    } catch (error) {
-      console.error(`Failed to add LAN printer with IP ${ip}:`, error);
-      return {
-        status: false,
-        message: `Failed to add LAN printer with IP ${ip}: ${error}`,
-      };
+  const addLanPrinter = async (ip: string): Promise<ActionStatus> => {
+    const res = await gate(async () => {
+      try {
+        await backendService.addLANPrinter(ip);
+        await checkAppStatus(true);
+        return { status: true, message: `Successfully added LAN printer with IP ${ip}` };
+      } catch (error) {
+        return {
+          status: false,
+          message: `Failed to add LAN printer with IP ${ip}: ${error}`,
+        };
+      }
+    });
+
+    if (res === null) {
+      return { status: false, message: "Action cancelled or PIN required" };
     }
+    return res;
   };
 
-  // Only poll while the window is in front: every tick enumerates USB devices
-  // and dials each LAN printer, which is wasted work when nobody is looking.
+  // Poll while window is visible
   useEffect(() => {
     let intervalId: number | null = null;
 
     const startPolling = () => {
-      if (intervalId !== null) {
-        return;
-      }
+      if (intervalId !== null) return;
       checkAppStatus();
       intervalId = window.setInterval(checkAppStatus, POLL_INTERVAL);
     };
 
     const stopPolling = () => {
-      if (intervalId === null) {
-        return;
-      }
+      if (intervalId === null) return;
       clearInterval(intervalId);
       intervalId = null;
     };
@@ -179,9 +164,7 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     window.addEventListener("focus", startPolling);
     window.addEventListener("blur", stopPolling);
 
-    if (!document.hidden) {
-      startPolling();
-    }
+    if (!document.hidden) startPolling();
 
     return () => {
       stopPolling();
@@ -191,10 +174,17 @@ export const PrinterContextWrapper = ({ children }: PrinterContextWrapper) => {
     };
   }, [checkAppStatus]);
 
+  // Refresh printers if app variables change (e.g. network printing toggled)
+  useEffect(() => {
+    if (!isWails) return;
+    return EventsOn("app:variables_changed", () => {
+      checkAppStatus(true);
+    });
+  }, [isWails, checkAppStatus]);
 
-  const setters = {};
-  const actions = { removeLanPrinter, addLanPrinter, };
-  const data = { printers: printers, lanStatus, fetchError, };
+  const setters = {} as Record<string, never>;
+  const actions = { removeLanPrinter, addLanPrinter };
+  const data = { printers, lanStatus, fetchError };
 
   return (
     <PrinterContext.Provider value={{ data, setters, actions }}>

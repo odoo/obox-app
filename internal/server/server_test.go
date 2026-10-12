@@ -24,7 +24,7 @@ func newTestServer(t testing.TB, cfg *config.Manager) (*Server, *printer.Manager
 	}
 	mgr := printer.NewManager(cfg)
 	oboxMod := obox.NewManager(cfg.Data.Port, cfg, app_actions.OboxActionHandler(mgr))
-	s := New(cfg.Data.Port, mgr, oboxMod)
+	s := New(cfg.Data.Port, mgr, oboxMod, cfg, nil)
 	t.Cleanup(func() {
 		_ = s.Stop()
 		oboxMod.Stop()

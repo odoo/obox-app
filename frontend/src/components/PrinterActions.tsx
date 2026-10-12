@@ -1,9 +1,9 @@
 import { useContext, useState } from "react";
 import { ToastContext } from "../contexts/ToastContext";
-import { printer } from "../../wailsjs/go/models";
 import { errorText } from "../error";
 import { executePrint } from "../functions/executePrint";
 import { useClipboard } from "../hooks/useClipboard";
+import { printer } from "../../wailsjs/go/models";
 
 interface PrinterActionsProps {
   printer: printer.Device;

@@ -9,50 +9,36 @@ import { errorText } from "../error";
 import {
   BoltIcon,
   DownloadIcon,
+  MonitorIcon,
   SettingsIcon,
+  SpinnerIcon,
   WifiIcon,
 } from "../functions/icon";
 import { AppContext } from "../contexts/AppContext";
-
-interface ToggleSwitchProps {
-  checked: boolean;
-  disabled?: boolean;
-  onChange: () => void;
-}
-
-function ToggleSwitch({ checked, disabled, onChange }: ToggleSwitchProps) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange();
-      }}
-      className={`inline-flex h-5 w-9 shrink-0 p-0.5 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${checked ? "bg-odoo" : "bg-gray-300"
-        }`}
-    >
-      <span
-        aria-hidden="true"
-        className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-4" : "translate-x-0"
-          }`}
-      />
-    </button>
-  );
-}
+import { WebViewContext } from "../contexts/WebViewContext";
+import WebViewDialog from "./WebViewDialog";
 
 export default function HeaderMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
   const appContext = useContext(AppContext);
   const toastContext = useContext(ToastContext);
+  const { data: webViewData } = useContext(WebViewContext);
 
   const [isOpen, setIsOpen] = useState(false);
   const [isLoadingAutostart, setIsLoadingAutostart] = useState(false);
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
+  const [kioskOpenSignal, setKioskOpenSignal] = useState(0);
 
-  const { autoStart, networkPrintingEnabled } = appContext.data;
+  const { autoStart, networkPrintingEnabled, isWails } = appContext.data;
+
+  const isLocalhost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "127.0.0.1" ||
+      window.location.hostname === "localhost");
+
+  const isKioskCurrentlyActive = (isWails || isLocalhost)
+    ? webViewData.isKioskActive
+    : Boolean(webViewData.config?.enabled);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -102,6 +88,11 @@ export default function HeaderMenu() {
     }
   };
 
+  const handleOpenKiosk = () => {
+    setIsOpen(false);
+    setKioskOpenSignal((prev) => prev + 1);
+  };
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -125,13 +116,25 @@ export default function HeaderMenu() {
 
           <div className="space-y-1">
             {/* Auto Start Item */}
-            <div
+            <button
+              type="button"
+              disabled={isLoadingAutostart}
               onClick={toggleAutostart}
-              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer disabled:opacity-60 transition-colors text-left"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-100/80 text-odoo flex items-center justify-center shrink-0">
-                  <BoltIcon className="w-3.5 h-3.5" />
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                    autoStart
+                      ? "bg-odoo text-white shadow-xs"
+                      : "bg-purple-50 border border-purple-100/80 text-odoo"
+                  }`}
+                >
+                  {isLoadingAutostart ? (
+                    <SpinnerIcon className="w-3.5 h-3.5" />
+                  ) : (
+                    <BoltIcon className="w-3.5 h-3.5" />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-gray-800">
@@ -142,42 +145,70 @@ export default function HeaderMenu() {
                   </div>
                 </div>
               </div>
-              <ToggleSwitch
-                checked={autoStart}
-                disabled={isLoadingAutostart}
-                onChange={toggleAutostart}
-              />
-            </div>
+            </button>
 
             {/* Network Printing Item */}
-            <div
+            <button
+              type="button"
+              disabled={isLoadingNetwork}
               onClick={toggleNetworkPrinting}
-              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer disabled:opacity-60 transition-colors text-left"
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100/80 text-blue-600 flex items-center justify-center shrink-0">
-                  <WifiIcon className="w-3.5 h-3.5" />
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                    networkPrintingEnabled
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "bg-blue-50 border border-blue-100/80 text-blue-600"
+                  }`}
+                >
+                  {isLoadingNetwork ? (
+                    <SpinnerIcon className="w-3.5 h-3.5" />
+                  ) : (
+                    <WifiIcon className="w-3.5 h-3.5" />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-gray-800">
                     Accept print requests
                   </div>
-                  <div className="text-[10px] text-gray-500">
+                  <div className="text-[10px] text-gray-500 truncate">
                     Accept LAN print jobs from other devices
                   </div>
                 </div>
               </div>
-              <ToggleSwitch
-                checked={networkPrintingEnabled}
-                disabled={isLoadingNetwork}
-                onChange={toggleNetworkPrinting}
-              />
-            </div>
+            </button>
           </div>
 
           <div className="border-t border-gray-100 my-1.5" />
 
           <div className="space-y-1">
+            <button
+              type="button"
+              onClick={handleOpenKiosk}
+              className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                    isKioskCurrentlyActive
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "bg-emerald-50 border border-emerald-100/80 text-emerald-600"
+                  }`}
+                >
+                  <MonitorIcon className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-gray-800">
+                    Kiosk & Remote Access
+                  </div>
+                  <div className="text-[10px] text-gray-500 truncate">
+                    Configure kiosk, screen & pairing
+                  </div>
+                </div>
+              </div>
+            </button>
+
             <button
               type="button"
               onClick={handleDownloadLogs}
@@ -198,6 +229,7 @@ export default function HeaderMenu() {
           </div>
         </div>
       )}
+      <WebViewDialog openSignal={kioskOpenSignal} />
     </div>
   );
 }

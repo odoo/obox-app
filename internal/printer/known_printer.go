@@ -25,6 +25,7 @@ var printerRegistry = map[string]Type{
 	"04b8:0202": TypeReceipt, // Epson thermal
 	"04b8:0203": TypeReceipt, // Epson thermal
 	"04b8:0e27": TypeReceipt, // Epson TM-T83III
+	"0d3a:0379": TypeReceipt, // Posiflex
 	"2d84:c7c8": TypeReceipt, // Zhuhai Poskey
 	"4b43:3830": TypeReceipt, // Caysn
 	"0483:5720": TypeReceipt, // STMicroelectronics

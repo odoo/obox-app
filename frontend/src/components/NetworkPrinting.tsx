@@ -14,6 +14,7 @@ export default function NetworkPrinting() {
   const enabled = appContext.data.networkPrintingEnabled;
 
   const fetchInfo = async () => {
+    if (!appContext.data.isWails) return;
     setIsLoadingInfo(true);
     try {
       const data = await GetTroubleshootInfo();
@@ -28,10 +29,10 @@ export default function NetworkPrinting() {
   };
 
   useEffect(() => {
-    if (enabled) {
+    if (appContext.data.isWails && enabled) {
       fetchInfo();
     }
-  }, [enabled]);
+  }, [appContext.data.isWails, enabled]);
 
   const steps = useMemo<Step[]>(() => {
     if (!info) return [];
@@ -45,9 +46,9 @@ export default function NetworkPrinting() {
       return getMacSteps(info);
     }
     return [];
-  }, [info]);
+  }, [info, appContext.data]);
 
-  if (!enabled) {
+  if (!appContext.data.isWails || !enabled) {
     return null;
   }
 

@@ -10,6 +10,19 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    cors: true,
+    fs: {
+      allow: [".."],
+    },
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:4545",
+        changeOrigin: true,
+      },
+    },
+    headers: {
+      "Permissions-Policy": "local-network-access=*, private-network-access=*, local-network=*, loopback-network=*",
+    },
   },
   resolve: {
     alias: {

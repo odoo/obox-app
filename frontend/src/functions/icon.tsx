@@ -169,3 +169,90 @@ export const PrinterTypeIcon = ({
   if (printer.isLAN) return <WifiIcon className={className} />;
   return <UsbIcon className={className} />;
 };
+
+export const MonitorIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <rect x="2" y="3" width="20" height="14" rx="2" strokeWidth="2" />
+    <line x1="8" y1="21" x2="16" y2="21" strokeWidth="2" />
+    <line x1="12" y1="17" x2="12" y2="21" strokeWidth="2" />
+  </Base24Svg>
+);
+
+export const RefreshIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    />
+  </Base24Svg>
+);
+
+export const PlayCircleIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </Base24Svg>
+);
+
+export const SpinnerIcon = ({ className = "w-4 h-4 animate-spin", ...props }: IconProps) => (
+  <Base24Svg className={className} stroke="none" strokeWidth={0} {...props}>
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+  </Base24Svg>
+);
+
+export const CheckSolidIcon = (props: IconProps) => (
+  <Base24Svg viewBox="0 0 20 20" fill="currentColor" stroke="none" strokeWidth={0} {...props}>
+    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+  </Base24Svg>
+);
+
+export const ExclamationCircleSolidIcon = (props: IconProps) => (
+  <Base24Svg viewBox="0 0 20 20" fill="currentColor" stroke="none" strokeWidth={0} {...props}>
+    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+  </Base24Svg>
+);
+
+export const CheckCircleSolidIcon = (props: IconProps) => (
+  <Base24Svg viewBox="0 0 20 20" fill="currentColor" stroke="none" strokeWidth={0} {...props}>
+    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+  </Base24Svg>
+);
+
+export const ExclamationTriangleIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 4h.01M10.29 3.86l-8.1 14a2 2 0 001.73 3h16.16a2 2 0 001.73-3l-8.1-14a2 2 0 00-3.42 0z" />
+  </Base24Svg>
+);
+
+export const DesktopIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </Base24Svg>
+);
+
+export const FullscreenIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+  </Base24Svg>
+);
+
+export const WindowIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2" />
+    <line x1="3" y1="9" x2="21" y2="9" strokeWidth="2" />
+  </Base24Svg>
+);
+
+export const FingerprintIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+  </Base24Svg>
+);
+
+export const DeviceMobileIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+  </Base24Svg>
+);
