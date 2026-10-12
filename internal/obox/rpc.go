@@ -130,7 +130,7 @@ func (m *Manager) callOdooOboxConnect(ctx context.Context, dbURL, token string) 
 			"serial_number": m.appID,
 			"token":         token,
 			"local_ip":      util.LocalAddr(m.port, m.cfg.IsNetworkPrintingEnabled()),
-			"services":      []string{"usb", "printer"},
+			"services":      []string{"usb", "printer", "kiosk"},
 		}
 
 		resp, err := m.postJSONRPCWithContext(ctx, endpoint, params)

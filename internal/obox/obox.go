@@ -50,6 +50,9 @@ type Manager struct {
 	statusMu       sync.Mutex
 	onStatusChange func(ConnectionStatus)
 
+	kioskMu     sync.Mutex
+	onOpenKiosk func(url string)
+
 	connectMu     sync.Mutex
 	connectCancel *cancelHandle
 
@@ -282,6 +285,23 @@ func (m *Manager) notifyStatusChange() {
 
 	if fn != nil {
 		fn(m.ConnectionStatus())
+	}
+}
+
+// SetOnOpenKiosk registers a callback invoked when open_kiosk is received via queue action.
+func (m *Manager) SetOnOpenKiosk(fn func(url string)) {
+	m.kioskMu.Lock()
+	m.onOpenKiosk = fn
+	m.kioskMu.Unlock()
+}
+
+func (m *Manager) notifyOpenKiosk(url string) {
+	m.kioskMu.Lock()
+	fn := m.onOpenKiosk
+	m.kioskMu.Unlock()
+
+	if fn != nil {
+		go fn(url)
 	}
 }
 

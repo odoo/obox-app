@@ -163,6 +163,14 @@ func (a *App) startBackend() (int, error) {
 	a.obox.SetOnStatusChange(func(status obox.ConnectionStatus) {
 		a.events.Emit(a.ctx, "odoo:status_changed", status)
 	})
+	a.obox.SetOnOpenKiosk(func(url string) {
+		logger.Infof("Remote command received from Odoo queue: Open WebApp URL %s", url)
+		a.NavigateToWebApp()
+		if a.ctx != nil {
+			a.events.Emit(a.ctx, "kiosk-state-changed", true)
+			a.events.Emit(a.ctx, "webview-config-changed")
+		}
+	})
 
 	// Generate a unique session token that identifies requests from this
 	// trusted Wails process. The remote webview never has this token.
@@ -180,17 +188,17 @@ func (a *App) startBackend() (int, error) {
 			a.ReturnToWailsApp()
 		}
 		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, "kiosk-state-changed", enabled)
+			a.events.Emit(a.ctx, "kiosk-state-changed", enabled)
 		}
 	})
 	a.webserver.SetConfigCallback(func() {
 		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, "webview-config-changed")
+			a.events.Emit(a.ctx, "webview-config-changed")
 		}
 	})
 	a.webserver.SetKioskReloadCallback(func() {
 		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, "kiosk-reload")
+			a.events.Emit(a.ctx, "kiosk-reload")
 		}
 	})
 	a.webserver.SetKioskExitCallback(func() {
@@ -283,7 +291,7 @@ func (a *App) SetWebViewFullscreen(fullscreen bool) error {
 		a.SetWindowFullscreen(fullscreen)
 	}
 	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "webview-config-changed")
+		a.events.Emit(a.ctx, "webview-config-changed")
 	}
 	return nil
 }
@@ -353,7 +361,7 @@ func (a *App) SetWindowFullscreen(fullscreen bool) {
 // ReloadKiosk broadcasts a kiosk-reload event to reload the active kiosk iframe.
 func (a *App) ReloadKiosk() {
 	if a.ctx != nil {
-		wailsruntime.EventsEmit(a.ctx, "kiosk-reload")
+		a.events.Emit(a.ctx, "kiosk-reload")
 	}
 }
 
@@ -432,6 +440,8 @@ func (a *App) NavigateToWebApp() {
 	}
 
 	if a.ctx != nil {
+		wailsruntime.WindowShow(a.ctx)
+		wailsruntime.WindowUnminimise(a.ctx)
 		logger.Infof("Navigating top-level WebView to configured URL: %s", targetURL)
 		wailsruntime.WindowExecJS(a.ctx, fmt.Sprintf("window.location.replace(%q);", targetURL))
 

@@ -82,3 +82,72 @@ func TestObox_ExecuteAction_HandlerError(t *testing.T) {
 	testutil.ExpectedEqual(t, errMap["error"], "printer failure: connection refused")
 	testutil.ExpectedFalse(t, strings.Contains(resultStr, "not supported"))
 }
+
+func TestObox_ExecuteAction_OpenKiosk(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	var openedURL string
+	openCh := make(chan string, 1)
+	m.SetOnOpenKiosk(func(url string) {
+		openCh <- url
+	})
+
+	kioskPayload := `{"url": "https://example.com/pos-self/204?access_token=tok123", "timezone": "Europe/Brussels"}`
+	m.executeAction(QueueAction{
+		UUID: "uuid-open-kiosk",
+		Payload: ActionPayload{
+			URL:     "/odoo/open_kiosk",
+			Method:  "GET",
+			Payload: json.RawMessage(kioskPayload),
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-open-kiosk")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "opened")
+
+	openedURL = <-openCh
+	testutil.ExpectedEqual(t, openedURL, "https://example.com/pos-self/204?access_token=tok123")
+	testutil.ExpectedEqual(t, cfg.GetWebViewURL(), "https://example.com/pos-self/204?access_token=tok123")
+	testutil.ExpectedTrue(t, cfg.GetWebViewEnabled())
+}
+
+func TestObox_ExecuteAction_OpenKiosk_InvalidURL(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-invalid-kiosk",
+		Payload: ActionPayload{
+			URL:     "/odoo/open_kiosk",
+			Method:  "GET",
+			Payload: json.RawMessage(`{"url": "not-a-valid-url"}`),
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-invalid-kiosk")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedTrue(t, strings.Contains(resMap["error"], "invalid URL"))
+}
+
