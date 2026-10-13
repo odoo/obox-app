@@ -19,6 +19,10 @@ type AppContextType = {
     networkPrintingEnabled: boolean;
     autoStart: boolean;
     isLoading: boolean;
+    version: string;
+    buildTime: string;
+    commit: string;
+    debugMode: boolean;
   };
   actions: {};
 };
@@ -33,6 +37,10 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
   const [app, setApp] = useState<main.AppVariable | null>(null);
 
   const os = app?.os || null;
+  const version = app?.version || "";
+  const buildTime = app?.buildTime || "";
+  const commit = app?.commit || "";
+  const debugMode = app?.debugMode ?? false;
   const data = {
     app,
     os,
@@ -45,6 +53,10 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
     autoStart: app?.autoStart ?? false,
     networkPrintingEnabled: app?.networkPrintingEnabled ?? false,
     isLoading: app === null,
+    version,
+    buildTime,
+    commit,
+    debugMode,
   };
   const setters = {};
   const actions = {};
@@ -84,6 +96,14 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
         unsubscribe();
       }
     };
+  }, []);
+
+  useEffect(() => {
+    return EventsOn("app:variables_changed", (variables: main.AppVariable) => {
+      if (variables) {
+        setApp(main.AppVariable.createFrom(variables));
+      }
+    });
   }, []);
 
   return (

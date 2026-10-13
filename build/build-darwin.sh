@@ -63,7 +63,7 @@ EOF
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo "▶ Building..."
-wails build -clean
+wails build -clean -ldflags "-X obox-app/buildinfo.Version=${VERSION} -X obox-app/buildinfo.BuildTime=${BUILD_TIME} -X obox-app/buildinfo.Commit=${COMMIT}"
 
 # ── Bundle libusb ─────────────────────────────────────────────────────────────
 echo "▶ Bundling libusb..."

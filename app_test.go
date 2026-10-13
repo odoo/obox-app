@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"obox-app/buildinfo"
 	"obox-app/internal/app_actions"
 	"obox-app/internal/config"
 	"obox-app/internal/logger"
@@ -226,7 +227,10 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	testutil.ExpectedEqual(t, appVariable.IPAddress, util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled()))
 	testutil.ExpectedEqual(t, util.GetPrinterUrl(srv.Port, app.config.IsNetworkPrintingEnabled(), "czpTTjEyMzQ1Ng"), fmt.Sprintf("%s/p/czpTTjEyMzQ1Ng", util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled())))
 	testutil.ExpectedTrue(t, appVariable.ServerRunning, "Expected ServerRunning to be true")
-	testutil.ExpectedTrue(t, appVariable.OS != "", "Expected non-empty Os field in app variable")
+	testutil.ExpectedTrue(t, appVariable.Os != "", "Expected non-empty Os field in app variable")
+	testutil.ExpectedEqual(t, appVariable.Version, buildinfo.Version)
+	testutil.ExpectedEqual(t, appVariable.BuildTime, buildinfo.BuildTime)
+	testutil.ExpectedEqual(t, appVariable.Commit, buildinfo.Commit)
 
 	// Verify Printers() includes the configured LAN printer
 	printers := app.Printers()
@@ -592,4 +596,55 @@ func TestApp_Shutdown_StopsOboxAndServer(t *testing.T) {
 		obox:      nil,
 	}
 	appNil.shutdown(context.Background())
+}
+
+func TestApp_DebugModeEnabled(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	cfg, err := config.NewManager()
+	port := testutil.GetFreePort(t)
+	mgr := printer.NewManager()
+	srv := server.New(port, mgr)
+	defer srv.Stop()
+
+	app := &App{
+		config:         cfg,
+		webserver:      srv,
+		printerManager: mgr,
+		events:         runtimeEvents{},
+	}
+
+	// Default state
+	testutil.ExpectedFalse(t, cfg.IsDebugMode())
+	testutil.ExpectedFalse(t, logger.IsDebugMode())
+
+	// Enable debug mode via App
+	err = app.SetSupportModeEnabled(true)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, cfg.IsDebugMode())
+	testutil.ExpectedTrue(t, logger.IsDebugMode())
+	testutil.ExpectedTrue(t, app.AppVariable().DebugMode)
+
+	// Disable debug mode via App
+	err = app.SetSupportModeEnabled(false)
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedFalse(t, cfg.IsDebugMode())
+	testutil.ExpectedFalse(t, logger.IsDebugMode())
+	testutil.ExpectedFalse(t, app.AppVariable().DebugMode)
+}
+
+func TestApp_UpdateMethods(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	app := &App{config: cfg}
+
+	// Test MarkUpdateSeen
+	testutil.ExpectedEqual(t, cfg.LastSeenUpdate(), "")
+	testutil.ExpectedNoError(t, app.MarkUpdateSeen("1.2.3"))
+	testutil.ExpectedEqual(t, cfg.LastSeenUpdate(), "1.2.3")
 }
