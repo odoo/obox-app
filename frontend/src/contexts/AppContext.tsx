@@ -1,4 +1,4 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useState } from "react";
 import { main } from "../../wailsjs/go/models";
 import { AppVariable } from "../../wailsjs/go/main/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
@@ -23,8 +23,11 @@ type AppContextType = {
     buildTime: string;
     commit: string;
     debugMode: boolean;
+    aboutSignal: number;
   };
-  actions: {};
+  actions: {
+    openAbout: () => void;
+  };
 };
 
 export const AppContext = createContext({} as AppContextType);
@@ -35,6 +38,11 @@ interface AppContextWrapper {
 
 export const AppContextWrapper = ({ children }: AppContextWrapper) => {
   const [app, setApp] = useState<main.AppVariable | null>(null);
+  const [aboutSignal, setAboutSignal] = useState(0);
+
+  const openAbout = useCallback(() => {
+    setAboutSignal((prev) => prev + 1);
+  }, []);
 
   const os = app?.os || null;
   const version = app?.version || "";
@@ -57,9 +65,12 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
     buildTime,
     commit,
     debugMode,
+    aboutSignal,
   };
   const setters = {};
-  const actions = {};
+  const actions = {
+    openAbout,
+  };
 
   useEffect(() => {
     let cancelled = false;

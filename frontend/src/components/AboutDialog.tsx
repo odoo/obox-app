@@ -7,7 +7,7 @@ import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 export default function AboutDialog() {
   const appContext = useContext(AppContext);
   const updateContext = useContext(UpdateContext);
-  const { version, buildTime, commit, os, isWindows, isMac, isLinux, serverIsRunning } = appContext.data;
+  const { version, buildTime, commit, os, isWindows, isMac, isLinux, serverIsRunning, aboutSignal } = appContext.data;
 
   const updateData = updateContext?.data;
   const updateActions = updateContext?.actions;
@@ -60,56 +60,24 @@ export default function AboutDialog() {
   const manualDownloadUrl = "https://github.com/djip-odoo/obox-app/releases/latest";
 
   return (
-    <Dialog
-      title="About Obox App"
-      maxWidth="max-w-sm"
-      showTitleDivider={true}
-      actions={[
-        {
-          name: "ok",
-          label: "OK",
-          variant: "primary" as ActionType,
-        },
-      ]}
-      openButton={
-        <div className="fixed bottom-3 left-3 sm:bottom-4 sm:left-4 z-30">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium text-gray-700 bg-white/90 hover:bg-white backdrop-blur-sm border border-gray-200/80 hover:border-odoo/40 shadow-xs hover:shadow-md transition-all duration-200 active:scale-[0.98] cursor-pointer select-none group focus:outline-none focus-visible:ring-2 focus-visible:ring-odoo/30"
-            title="View About & System Status"
-          >
-            <span className="relative flex h-2 w-2 shrink-0">
-              {serverIsRunning ? (
-                <>
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-xs" />
-                </>
-              ) : (
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500 ring-2 ring-rose-100" />
-              )}
-            </span>
+    <>
+      <div className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-20 pointer-events-none select-none text-xs font-mono text-gray-400">
+        {formattedVersion}
+      </div>
 
-            <span className="font-mono text-[11px] font-semibold text-gray-700 tracking-tight group-hover:text-odoo transition-colors">
-              {formattedVersion}
-            </span>
-
-            <svg
-              className="w-3.5 h-3.5 text-gray-400 group-hover:text-odoo group-hover:rotate-6 transition-all duration-200 shrink-0"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </button>
-        </div>
-      }
-    >
+      <Dialog
+        title="About Obox App"
+        maxWidth="max-w-sm"
+        showTitleDivider={true}
+        openSignal={aboutSignal}
+        actions={[
+          {
+            name: "ok",
+            label: "OK",
+            variant: "primary" as ActionType,
+          },
+        ]}
+      >
       <div className="space-y-4">
         {/* App Branding Header */}
         <div className="flex items-center gap-3.5 pb-0.5">
@@ -374,5 +342,6 @@ export default function AboutDialog() {
         )}
       </div>
     </Dialog>
+    </>
   );
 }

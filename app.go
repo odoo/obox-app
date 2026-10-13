@@ -453,7 +453,7 @@ func (a *App) ApplyUpdate() error {
 		a.restart = false
 		if wasRunning && a.config != nil {
 			if port, portErr := a.config.ResolvePort(); portErr == nil {
-				a.webserver = server.New(port, a.printerManager)
+				a.webserver = server.New(port, a.printerManager, a.obox)
 			}
 		}
 		logger.Errorf("Failed to apply update: %v", err)

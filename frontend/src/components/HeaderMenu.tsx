@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import {
   DownloadLogs,
+  SetSupportModeEnabled,
   ToggleAutoStart,
   ToggleNetworkPrinting,
 } from "../../wailsjs/go/main/App";
@@ -8,7 +9,9 @@ import { ToastContext } from "../contexts/ToastContext";
 import { errorText } from "../error";
 import {
   BoltIcon,
+  BugIcon,
   DownloadIcon,
+  HelpCircleIcon,
   SettingsIcon,
   WifiIcon,
 } from "../functions/icon";
@@ -51,8 +54,9 @@ export default function HeaderMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoadingAutostart, setIsLoadingAutostart] = useState(false);
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
+  const [isLoadingDebugMode, setIsLoadingDebugMode] = useState(false);
 
-  const { autoStart, networkPrintingEnabled } = appContext.data;
+  const { autoStart, networkPrintingEnabled, debugMode } = appContext.data;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -93,6 +97,18 @@ export default function HeaderMenu() {
     }
   };
 
+  const toggleDebugMode = async () => {
+    setIsLoadingDebugMode(true);
+    try {
+      await SetSupportModeEnabled(!debugMode);
+      toastContext.actions.showToast(`Debug mode ${debugMode ? "Disabled" : "Enabled"}`, "success");
+    } catch (err) {
+      toastContext.actions.showToast(`Failed to update debug mode: ${errorText(err, "unknown error")}`, "danger");
+    } finally {
+      setIsLoadingDebugMode(false);
+    }
+  };
+
   const handleDownloadLogs = async () => {
     setIsOpen(false);
     try {
@@ -100,6 +116,11 @@ export default function HeaderMenu() {
     } catch (err) {
       toastContext.actions.showToast(`Failed to download logs: ${errorText(err, "unknown error")}`, "danger");
     }
+  };
+
+  const handleOpenAbout = () => {
+    setIsOpen(false);
+    appContext.actions.openAbout();
   };
 
   return (
@@ -173,6 +194,31 @@ export default function HeaderMenu() {
                 onChange={toggleNetworkPrinting}
               />
             </div>
+
+            {/* Debug Mode Item */}
+            <div
+              onClick={toggleDebugMode}
+              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100/80 text-emerald-600 flex items-center justify-center shrink-0">
+                  <BugIcon className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-gray-800">
+                    Debug mode
+                  </div>
+                  <div className="text-[10px] text-gray-500 truncate">
+                    Enable verbose logging (24h)
+                  </div>
+                </div>
+              </div>
+              <ToggleSwitch
+                checked={debugMode}
+                disabled={isLoadingDebugMode}
+                onChange={toggleDebugMode}
+              />
+            </div>
           </div>
 
           <div className="border-t border-gray-100 my-1.5" />
@@ -192,6 +238,24 @@ export default function HeaderMenu() {
                 </div>
                 <div className="text-[10px] text-gray-500 truncate">
                   Export logs archive for debug
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleOpenAbout}
+              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
+            >
+              <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-100/80 text-odoo flex items-center justify-center shrink-0">
+                <HelpCircleIcon className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-gray-800">
+                  About Obox App
+                </div>
+                <div className="text-[10px] text-gray-500 truncate">
+                  Version, updates & system info
                 </div>
               </div>
             </button>

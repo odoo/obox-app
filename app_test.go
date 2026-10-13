@@ -227,7 +227,7 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 	testutil.ExpectedEqual(t, appVariable.IPAddress, util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled()))
 	testutil.ExpectedEqual(t, util.GetPrinterUrl(srv.Port, app.config.IsNetworkPrintingEnabled(), "czpTTjEyMzQ1Ng"), fmt.Sprintf("%s/p/czpTTjEyMzQ1Ng", util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled())))
 	testutil.ExpectedTrue(t, appVariable.ServerRunning, "Expected ServerRunning to be true")
-	testutil.ExpectedTrue(t, appVariable.Os != "", "Expected non-empty Os field in app variable")
+	testutil.ExpectedTrue(t, appVariable.OS != "", "Expected non-empty OS field in app variable")
 	testutil.ExpectedEqual(t, appVariable.Version, buildinfo.Version)
 	testutil.ExpectedEqual(t, appVariable.BuildTime, buildinfo.BuildTime)
 	testutil.ExpectedEqual(t, appVariable.Commit, buildinfo.Commit)
@@ -372,12 +372,18 @@ func TestApp_DownloadLogs(t *testing.T) {
 		return dir
 	}
 
+	newAppWithDialogs := func(t *testing.T, dialogs dialoger) *App {
+		cfg, err := config.NewManager()
+		testutil.ExpectedNoError(t, err)
+		return &App{config: cfg, dialogs: dialogs}
+	}
+
 	t.Run("writes archive to the chosen path", func(t *testing.T) {
 		initLogs(t)
 		savePath := filepath.Join(t.TempDir(), "logs.zip")
 
 		dialogs := &fakeDialogs{savePath: savePath}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -395,7 +401,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 
 		// Wails returns an empty path when the user dismisses the dialog.
 		dialogs := &fakeDialogs{savePath: ""}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -407,7 +413,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 		initLogs(t)
 
 		dialogs := &fakeDialogs{saveErr: errors.New("dialog unavailable")}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -422,7 +428,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 		// Parent directory does not exist, so creating the archive fails.
 		savePath := filepath.Join(t.TempDir(), "missing", "logs.zip")
 		dialogs := &fakeDialogs{savePath: savePath}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -603,9 +609,10 @@ func TestApp_DebugModeEnabled(t *testing.T) {
 	t.Setenv("HOME", tempDir)
 
 	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
 	port := testutil.GetFreePort(t)
-	mgr := printer.NewManager()
-	srv := server.New(port, mgr)
+	mgr := printer.NewManager(cfg)
+	srv := server.New(port, mgr, nil)
 	defer srv.Stop()
 
 	app := &App{
@@ -613,6 +620,11 @@ func TestApp_DebugModeEnabled(t *testing.T) {
 		webserver:      srv,
 		printerManager: mgr,
 		events:         runtimeEvents{},
+		autoStart: &autostart.App{
+			Name:        config.AppName,
+			DisplayName: "Obox App",
+			Exec:        []string{"obox-app"},
+		},
 	}
 
 	// Default state
