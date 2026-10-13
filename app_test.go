@@ -103,7 +103,7 @@ func TestApp_CheckOdooStatus(t *testing.T) {
 
 	mgr := printer.NewManager(cfg)
 	oboxMod := obox.NewManager(cfg.Data.Port, cfg, app_actions.OboxActionHandler(mgr))
-	srv := server.New(cfg.Data.Port, mgr, oboxMod)
+	srv := server.New(cfg.Data.Port, mgr, oboxMod, cfg, nil)
 	defer srv.Stop()
 	defer oboxMod.Stop()
 
@@ -142,7 +142,7 @@ func TestApp_ConfirmDisconnectOdoo(t *testing.T) {
 
 			mgr := printer.NewManager(cfg)
 			oboxMod := obox.NewManager(cfg.Data.Port, cfg, app_actions.OboxActionHandler(mgr))
-			srv := server.New(cfg.Data.Port, mgr, oboxMod)
+			srv := server.New(cfg.Data.Port, mgr, oboxMod, cfg, nil)
 			defer srv.Stop()
 			defer oboxMod.Stop()
 
@@ -206,7 +206,7 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 
 	port := testutil.GetFreePort(t)
 	mgr := printer.NewManager(cfg)
-	srv := server.New(port, mgr, nil)
+	srv := server.New(port, mgr, nil, cfg, nil)
 	defer srv.Stop()
 
 	app := &App{
@@ -437,7 +437,7 @@ func TestApp_AutostartMethods(t *testing.T) {
 
 	port := testutil.GetFreePort(t)
 	mgr := printer.NewManager(cfg)
-	srv := server.New(port, mgr, nil)
+	srv := server.New(port, mgr, nil, cfg, nil)
 	defer srv.Stop()
 
 	app := &App{
@@ -470,7 +470,7 @@ func TestApp_NetworkPrintingEnabled(t *testing.T) {
 
 	port := testutil.GetFreePort(t)
 	mgr := printer.NewManager(cfg)
-	srv := server.New(port, mgr, nil)
+	srv := server.New(port, mgr, nil, cfg, nil)
 	defer srv.Stop()
 
 	events := &fakeEvents{}
@@ -535,7 +535,7 @@ func TestApp_NotifyAppVariablesChanged(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	mgr := printer.NewManager(cfg)
-	srv := server.New(port, mgr, nil)
+	srv := server.New(port, mgr, nil, cfg, nil)
 	defer srv.Stop()
 
 	events := &fakeEvents{}
@@ -573,7 +573,7 @@ func TestApp_Shutdown_StopsOboxAndServer(t *testing.T) {
 	port := testutil.GetFreePort(t)
 	mgr := printer.NewManager(cfg)
 	osMod := obox.NewManager(port, cfg, app_actions.OboxActionHandler(mgr))
-	srv := server.New(port, mgr, osMod)
+	srv := server.New(port, mgr, osMod, cfg, nil)
 
 	app := &App{
 		ctx:       context.Background(),

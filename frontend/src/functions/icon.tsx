@@ -256,3 +256,28 @@ export const DeviceMobileIcon = (props: IconProps) => (
     <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
   </Base24Svg>
 );
+
+export const GlobeAltIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+  </Base24Svg>
+);
+
+export const ExternalLinkIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
+  </Base24Svg>
+);
+
+export const ServerStackIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <ellipse cx="12" cy="5" rx="9" ry="3" />
+    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+    <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+  </Base24Svg>
+);
+

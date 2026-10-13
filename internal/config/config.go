@@ -21,11 +21,12 @@ const (
 )
 
 type AppConfig struct {
-	AppID           string     `json:"app_id"`
-	Port            int        `json:"port"`
-	LANPrinters     []string   `json:"lan_printers,omitempty"`
-	NetworkPrinting bool       `json:"network_printing"`
-	Odoo            OdooConfig `json:"odoo"`
+	AppID           string         `json:"app_id"`
+	Port            int            `json:"port"`
+	LANPrinters     []string       `json:"lan_printers,omitempty"`
+	NetworkPrinting bool           `json:"network_printing"`
+	Odoo            OdooConfig     `json:"odoo"`
+	OdooInstances   []OdooInstance `json:"odoo_instances,omitempty"`
 
 	WebViewURL         string   `json:"webview_url,omitempty"`
 	WebViewPIN         string   `json:"webview_pin"`
@@ -41,6 +42,7 @@ func defaults() AppConfig {
 		NetworkPrinting: false,
 		LANPrinters:     []string{},
 		Odoo:            OdooConfig{},
+		OdooInstances:   []OdooInstance{},
 
 		WebViewPIN:         "0000",
 		WebViewExitCorners: []string{"top-right"},

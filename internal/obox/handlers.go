@@ -40,6 +40,11 @@ func (m *Manager) HandleOfflineConnect(ctx fiber.Ctx) error {
 	return ctx.SendStatus(fiber.StatusOK)
 }
 
+// Connect initiates pairing and connection to the specified Odoo instance.
+func (m *Manager) Connect(dbURL, token string) {
+	m.connect(dbURL, token)
+}
+
 func (m *Manager) connect(dbURL, token string) {
 	m.cancelConnect()
 	m.stopQueueHandler()

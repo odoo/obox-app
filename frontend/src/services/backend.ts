@@ -1,12 +1,18 @@
 import { detectWails } from "../contexts/AppContext";
 import {
   AddLANPrinter,
+  AddOdooInstance,
   AppVariable,
   CheckLANPrinterStatus,
+  CompleteOdooSessionPairing,
   ConfirmRemoveLANPrinter,
+  GetOdooInstances,
   GetTroubleshootInfo,
   GetWebViewConfig,
+  OpenOdooSession,
   Printers,
+  RemoveOdooInstance,
+  SetActiveOdooInstance,
   SetWebViewEnabled,
   SetWebViewExitCorners,
   SetWebViewFullscreen,
@@ -15,10 +21,12 @@ import {
   SetWindowFullscreen,
   ValidateWebViewPIN,
   IsPendingPinAuth,
+  IsRenderingWebApp,
   CompletePinAuth,
   NavigateToWebApp,
   ReturnToWailsApp,
   SetWailsAppURL,
+  SyncOdooInstance,
   ToggleAutoStart,
   ToggleNetworkPrinting,
 } from "../../wailsjs/go/main/App";
@@ -45,7 +53,7 @@ import {
   apiReloadKiosk,
   apiQuitApp,
 } from "../api/client";
-import { main, printer } from "../../wailsjs/go/models";
+import { config, main, printer } from "../../wailsjs/go/models";
 
 export interface IBackendService {
   readonly isWails: boolean;
@@ -76,10 +84,26 @@ export interface IBackendService {
   reloadKiosk(): Promise<void>;
   quitServer(): Promise<void>;
   isPendingPinAuth(): Promise<boolean>;
+  isRenderingWebApp(): Promise<boolean>;
   completePinAuth(success: boolean): Promise<void>;
   navigateToWebApp(): Promise<void>;
   returnToWailsApp(): Promise<void>;
   setWailsAppURL(url: string): Promise<void>;
+
+  // Odoo Sessions (Wails Desktop Only)
+  getOdooInstances(): Promise<config.OdooInstance[]>;
+  addOdooInstance(url: string, name: string): Promise<config.OdooInstance>;
+  removeOdooInstance(id: string): Promise<void>;
+  setActiveOdooInstance(id: string): Promise<void>;
+  openOdooSession(id: string): Promise<void>;
+  completeOdooSessionPairing(
+    nonce: string,
+    instanceID: string,
+    token: string,
+    dbURL: string,
+    oboxID: number
+  ): Promise<void>;
+  syncOdooInstance(instanceID: string): Promise<void>;
 }
 
 class WailsBackendService implements IBackendService {
@@ -188,6 +212,10 @@ class WailsBackendService implements IBackendService {
     return IsPendingPinAuth();
   }
 
+  isRenderingWebApp(): Promise<boolean> {
+    return IsRenderingWebApp();
+  }
+
   completePinAuth(success: boolean): Promise<void> {
     return CompletePinAuth(success);
   }
@@ -202,6 +230,40 @@ class WailsBackendService implements IBackendService {
 
   setWailsAppURL(url: string): Promise<void> {
     return SetWailsAppURL(url);
+  }
+
+  getOdooInstances(): Promise<config.OdooInstance[]> {
+    return GetOdooInstances();
+  }
+
+  addOdooInstance(url: string, name: string): Promise<config.OdooInstance> {
+    return AddOdooInstance(url, name);
+  }
+
+  removeOdooInstance(id: string): Promise<void> {
+    return RemoveOdooInstance(id);
+  }
+
+  setActiveOdooInstance(id: string): Promise<void> {
+    return SetActiveOdooInstance(id);
+  }
+
+  openOdooSession(id: string): Promise<void> {
+    return OpenOdooSession(id);
+  }
+
+  completeOdooSessionPairing(
+    nonce: string,
+    instanceID: string,
+    token: string,
+    dbURL: string,
+    oboxID: number
+  ): Promise<void> {
+    return CompleteOdooSessionPairing(nonce, instanceID, token, dbURL, oboxID);
+  }
+
+  syncOdooInstance(instanceID: string): Promise<void> {
+    return SyncOdooInstance(instanceID);
   }
 }
 
@@ -301,6 +363,10 @@ class RemoteBackendService implements IBackendService {
     return Promise.resolve(false);
   }
 
+  isRenderingWebApp(): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
   completePinAuth(): Promise<void> {
     return Promise.resolve();
   }
@@ -314,6 +380,38 @@ class RemoteBackendService implements IBackendService {
   }
 
   setWailsAppURL(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  getOdooInstances(): Promise<config.OdooInstance[]> {
+    return Promise.resolve([]);
+  }
+
+  addOdooInstance(): Promise<config.OdooInstance> {
+    return Promise.reject(
+      new Error("Odoo session management is only available in the Wails desktop application")
+    );
+  }
+
+  removeOdooInstance(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  setActiveOdooInstance(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  openOdooSession(): Promise<void> {
+    return Promise.reject(
+      new Error("Odoo session management is only available in the Wails desktop application")
+    );
+  }
+
+  completeOdooSessionPairing(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  syncOdooInstance(): Promise<void> {
     return Promise.resolve();
   }
 }
@@ -414,6 +512,10 @@ class DynamicBackendService implements IBackendService {
     return this.service.isPendingPinAuth();
   }
 
+  isRenderingWebApp(): Promise<boolean> {
+    return this.service.isRenderingWebApp();
+  }
+
   completePinAuth(success: boolean): Promise<void> {
     return this.service.completePinAuth(success);
   }
@@ -428,6 +530,46 @@ class DynamicBackendService implements IBackendService {
 
   setWailsAppURL(url: string): Promise<void> {
     return this.service.setWailsAppURL(url);
+  }
+
+  getOdooInstances(): Promise<config.OdooInstance[]> {
+    return this.service.getOdooInstances();
+  }
+
+  addOdooInstance(url: string, name: string): Promise<config.OdooInstance> {
+    return this.service.addOdooInstance(url, name);
+  }
+
+  removeOdooInstance(id: string): Promise<void> {
+    return this.service.removeOdooInstance(id);
+  }
+
+  setActiveOdooInstance(id: string): Promise<void> {
+    return this.service.setActiveOdooInstance(id);
+  }
+
+  openOdooSession(id: string): Promise<void> {
+    return this.service.openOdooSession(id);
+  }
+
+  completeOdooSessionPairing(
+    nonce: string,
+    instanceID: string,
+    token: string,
+    dbURL: string,
+    oboxID: number
+  ): Promise<void> {
+    return this.service.completeOdooSessionPairing(
+      nonce,
+      instanceID,
+      token,
+      dbURL,
+      oboxID
+    );
+  }
+
+  syncOdooInstance(instanceID: string): Promise<void> {
+    return this.service.syncOdooInstance(instanceID);
   }
 }
 

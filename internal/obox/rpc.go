@@ -95,6 +95,46 @@ func (m *Manager) reportActionResult(uuid string, result interface{}) {
 	logger.Debugf("[obox queue] action_result response status: %d for uuid %s", resp.StatusCode, uuid)
 }
 
+func (m *Manager) sendScreenshot(screenshotBase64 string) error {
+	dbURL, token := m.getCredentials()
+	if dbURL == "" || token == "" {
+		return errors.New("no Odoo credentials")
+	}
+
+	params := map[string]interface{}{
+		"serial_number": m.appID,
+		"token":         token,
+		"screenshot":    screenshotBase64,
+	}
+
+	resp, err := m.postJSONRPC(dbURL+"/obox/screenshot", params)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (m *Manager) sendLogs(logsBase64 string) error {
+	dbURL, token := m.getCredentials()
+	if dbURL == "" || token == "" {
+		return errors.New("no Odoo credentials")
+	}
+
+	params := map[string]interface{}{
+		"serial_number": m.appID,
+		"token":         token,
+		"logs":          logsBase64,
+	}
+
+	resp, err := m.postJSONRPC(dbURL+"/obox/logs", params)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 func (m *Manager) callOdooPing() {
 	dbURL, token := m.getCredentials()
 	if dbURL == "" || token == "" {
@@ -130,7 +170,10 @@ func (m *Manager) callOdooOboxConnect(ctx context.Context, dbURL, token string) 
 			"serial_number": m.appID,
 			"token":         token,
 			"local_ip":      util.LocalAddr(m.port, m.cfg.IsNetworkPrintingEnabled()),
-			"services":      []string{"usb", "printer", "kiosk"},
+			"services":      []string{"usb", "printer", "kiosk", "sync"},
+			"local_port":    m.port,
+			"name":          "OBOX App",
+			"platform":      "android",
 		}
 
 		resp, err := m.postJSONRPCWithContext(ctx, endpoint, params)
@@ -149,6 +192,15 @@ func (m *Manager) callOdooOboxConnect(ctx context.Context, dbURL, token string) 
 		if resp.StatusCode == 200 && rpcResp.Error == nil {
 			logger.Debugf("[obox] Odoo /obox/connect SUCCESS on attempt %d (paired as %s)", attempt, m.appID)
 			m.setWsStatus(StateConnected)
+
+			if rpcResp.Result != nil {
+				var configResp ConfigResponse
+				if err := json.Unmarshal(*rpcResp.Result, &configResp); err == nil {
+					m.applyConfigResponse(&configResp)
+				}
+			}
+
+			go m.syncDeviceState(ctx, dbURL, token)
 			return nil
 		}
 
@@ -161,4 +213,82 @@ func (m *Manager) callOdooOboxConnect(ctx context.Context, dbURL, token string) 
 
 	logger.Errorf("[obox] Failed to complete /obox/connect after 10 attempts")
 	return fmt.Errorf("failed to complete /obox/connect after 10 attempts")
+}
+
+// ConfigResponse represents the Odoo _config_response payload.
+type ConfigResponse struct {
+	ConfigUpToDate bool               `json:"config_up_to_date"`
+	ConfigVersion  string             `json:"config_version"`
+	Config         *OdooConfigPayload `json:"config"`
+}
+
+// OdooConfigPayload represents configuration fields pushed by Odoo.
+type OdooConfigPayload struct {
+	Name     string        `json:"name"`
+	KioskPIN string        `json:"kiosk_pin"`
+	Features []interface{} `json:"features"`
+	Devices  []interface{} `json:"devices"`
+}
+
+func (m *Manager) applyConfigResponse(resp *ConfigResponse) {
+	if resp == nil {
+		return
+	}
+	if resp.ConfigVersion != "" {
+		m.SetAppliedConfigVersion(resp.ConfigVersion)
+	}
+	if resp.Config != nil && resp.Config.KioskPIN != "" {
+		if resp.Config.KioskPIN != m.cfg.GetWebViewPIN() {
+			logger.Infof("[obox] Applying kiosk PIN from Odoo config: %s", resp.Config.KioskPIN)
+			_ = m.cfg.SetWebViewPIN(resp.Config.KioskPIN)
+		}
+	}
+}
+
+// Sync transmits current device state to Odoo's /obox/sync endpoint.
+func (m *Manager) Sync(ctx context.Context) error {
+	dbURL, token := m.getCredentials()
+	if dbURL == "" || token == "" {
+		return errors.New("no Odoo credentials")
+	}
+	return m.syncDeviceState(ctx, dbURL, token)
+}
+
+func (m *Manager) syncDeviceState(ctx context.Context, dbURL, token string) error {
+	state := m.BuildDeviceState()
+	params := map[string]interface{}{
+		"serial_number": m.appID,
+		"token":         token,
+		"state":         state,
+	}
+	endpoint := dbURL + "/obox/sync"
+	resp, err := m.postJSONRPCWithContext(ctx, endpoint, params)
+	if err != nil {
+		logger.Debugf("[obox] /obox/sync error: %v", err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	var rpcResp struct {
+		Result *json.RawMessage `json:"result"`
+		Error  *json.RawMessage `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err == nil && rpcResp.Result != nil {
+		var configResp ConfigResponse
+		if err := json.Unmarshal(*rpcResp.Result, &configResp); err == nil {
+			m.applyConfigResponse(&configResp)
+		}
+	}
+
+	if rpcResp.Error != nil {
+		logger.Warnf("[obox] /obox/sync error from Odoo: %s", string(*rpcResp.Error))
+		return fmt.Errorf("odoo error: %s", string(*rpcResp.Error))
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d from /obox/sync", resp.StatusCode)
+	}
+
+	logger.Infof("[obox] /obox/sync successfully completed for serial=%s", m.appID)
+	return nil
 }

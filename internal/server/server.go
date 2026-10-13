@@ -28,17 +28,33 @@ type Server struct {
 	printerMgr *printer.Manager
 	cfg        *config.Manager
 
-	ready           chan struct{}
-	readyOnce       sync.Once
-	reloadCount     atomic.Int64
-	mu              sync.RWMutex
-	wailsToken      string          // trusted Wails session token (empty = none set yet)
-	sessions        map[string]bool // active PIN-auth session tokens (remote clients)
-	onKioskChanged  func(enabled bool)
-	onConfigChanged func()
-	onKioskReload   func()
-	onKioskExit     func()
-	wailsAppURL     string
+	ready                    chan struct{}
+	readyOnce                sync.Once
+	reloadCount              atomic.Int64
+	mu                       sync.RWMutex
+	wailsToken               string          // trusted Wails session token (empty = none set yet)
+	sessions                 map[string]bool // active PIN-auth session tokens (remote clients)
+	onKioskChanged           func(enabled bool)
+	onConfigChanged          func()
+	onKioskReload            func()
+	onKioskExit              func()
+	onCompleteSessionPairing func(nonce, instanceID, token, dbURL string, oboxID int) error
+	onOdooSessionExit        func()
+	wailsAppURL              string
+}
+
+// SetOnCompleteSessionPairing sets a callback invoked when a session pairing is submitted via HTTP.
+func (s *Server) SetOnCompleteSessionPairing(fn func(nonce, instanceID, token, dbURL string, oboxID int) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onCompleteSessionPairing = fn
+}
+
+// SetOnOdooSessionExit sets a callback invoked when an Odoo session is exited from the webview session bar.
+func (s *Server) SetOnOdooSessionExit(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onOdooSessionExit = fn
 }
 
 // New creates and starts the HTTP server on the specified bind host.

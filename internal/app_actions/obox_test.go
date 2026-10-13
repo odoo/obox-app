@@ -41,7 +41,7 @@ func TestBuildDeviceList(t *testing.T) {
 	testutil.ExpectedNoError(t, err)
 
 	pm := printer.NewManager(cfg)
-	list := buildDeviceList(pm)
+	list := BuildDeviceList(pm)
 
 	found := false
 	for _, dev := range list {

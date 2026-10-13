@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import NetworkPrinting from "./components/NetworkPrinting";
 import NetworkPrintingEnabledDialog from "./components/NetworkPrintingEnabledDialog";
 import PrinterList from "./components/PrinterList";
@@ -7,6 +7,8 @@ import SetPinDialog from "./components/SetPinDialog";
 import PINModal from "./components/PINModal";
 import { backendService } from "./services/backend";
 import AppProviders from "./contexts/AppProviders";
+import { ToastContext } from "./contexts/ToastContext";
+import { errorText } from "./error";
 
 export default function App() {
   return (
@@ -18,12 +20,43 @@ export default function App() {
 
 function AppContent() {
   const [pendingPin, setPendingPin] = useState(false);
+  const toastContext = useContext(ToastContext);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       backendService.setWailsAppURL(
         window.location.origin + window.location.pathname
       );
+    }
+
+    // Handle return from Odoo session pairing
+    if (typeof window !== "undefined" && window.location.search.includes("odoo_pair_nonce")) {
+      const params = new URLSearchParams(window.location.search);
+      const nonce = params.get("odoo_pair_nonce");
+      const token = params.get("odoo_pair_token");
+      const instanceID = params.get("odoo_pair_instance");
+      const oboxID = parseInt(params.get("odoo_pair_id") || "0", 10);
+      const dbURL = params.get("odoo_pair_url") || "";
+
+      if (nonce && token && instanceID) {
+        try {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (err) {}
+        backendService
+          .completeOdooSessionPairing(nonce, instanceID, token, dbURL, oboxID)
+          .then(() => {
+            toastContext.actions.showToast(
+              "Successfully paired with Odoo instance!",
+              "success"
+            );
+          })
+          .catch((err) => {
+            toastContext.actions.showToast(
+              `Failed to complete pairing: ${errorText(err, "unknown error")}`,
+              "danger"
+            );
+          });
+      }
     }
 
     const isExit =

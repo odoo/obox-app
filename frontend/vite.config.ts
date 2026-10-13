@@ -1,7 +1,26 @@
 import path from 'path'
+import fs from 'fs'
+import os from 'os'
 import {defineConfig} from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+function getBackendPort(): number {
+  if (process.env.BACKEND_PORT) {
+    const envPort = parseInt(process.env.BACKEND_PORT, 10);
+    if (!isNaN(envPort) && envPort > 0) return envPort;
+  }
+  try {
+    const configPath = path.join(os.homedir(), '.config', 'EposProxy', 'config.json');
+    if (fs.existsSync(configPath)) {
+      const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (typeof data.port === 'number' && data.port > 0) {
+        return data.port;
+      }
+    }
+  } catch {}
+  return 4545;
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,8 +35,23 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:4545",
+        target: `http://127.0.0.1:${getBackendPort()}`,
         changeOrigin: true,
+        router: () => {
+          return `http://127.0.0.1:${getBackendPort()}`;
+        },
+        configure: (proxy) => {
+          proxy.on("error", (err, _req, res) => {
+            if ((err as any).code === "ECONNREFUSED") {
+              if (res && "writeHead" in res && !res.headersSent) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Backend server starting..." }));
+              }
+              return;
+            }
+            console.error("[vite proxy error]", err.message);
+          });
+        },
       },
     },
     headers: {

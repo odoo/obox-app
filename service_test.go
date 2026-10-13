@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestDetermineLaunchMode(t *testing.T) {
@@ -64,11 +64,12 @@ func TestDetermineLaunchMode(t *testing.T) {
 }
 
 func TestBackendHeadlessServiceLifecycle(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	// Verify backend can start on 127.0.0.1, respond to HTTP requests,
 	// and stop cleanly without Wails or WebView2 initialization.
 	app := NewApp()
 
-	port, err := app.startBackend("127.0.0.1")
+	port, err := app.startBackend()
 	testutil.ExpectedNoError(t, err)
 	testutil.ExpectedTrue(t, port > 0, "Expected positive port")
 

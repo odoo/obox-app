@@ -151,3 +151,224 @@ func TestObox_ExecuteAction_OpenKiosk_InvalidURL(t *testing.T) {
 	testutil.ExpectedTrue(t, strings.Contains(resMap["error"], "invalid URL"))
 }
 
+func TestObox_ExecuteAction_KioskReload(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	reloadCh := make(chan bool, 1)
+	m.SetOnReloadKiosk(func() {
+		reloadCh <- true
+	})
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-kiosk-reload",
+		Payload: ActionPayload{
+			URL:    "/odoo/kiosk_reload",
+			Method: "GET",
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-kiosk-reload")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "ok")
+	testutil.ExpectedTrue(t, <-reloadCh)
+}
+
+func TestObox_ExecuteAction_KioskScreenLock(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-lock",
+		Payload: ActionPayload{
+			URL:     "/odoo/kiosk_screen_lock",
+			Method:  "POST",
+			Payload: json.RawMessage(`{"locked": true}`),
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-lock")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "ok")
+}
+
+func TestObox_ExecuteAction_Screenshot(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	origFunc := screenshotFunc
+	defer func() { screenshotFunc = origFunc }()
+	screenshotFunc = func() (string, error) {
+		return "fake-base64-screenshot-data", nil
+	}
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-screenshot",
+		Payload: ActionPayload{
+			URL:    "/odoo/screenshot",
+			Method: "GET",
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-screenshot")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "ok")
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ScreenshotReceived, "fake-base64-screenshot-data")
+}
+
+func TestObox_ExecuteAction_Logs(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	origFunc := readLogsFunc
+	defer func() { readLogsFunc = origFunc }()
+	readLogsFunc = func() (string, error) {
+		return "fake-base64-logs-data", nil
+	}
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-logs",
+		Payload: ActionPayload{
+			URL:    "/odoo/logs",
+			Method: "GET",
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-logs")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "ok")
+
+	testutil.ExpectedEqual(t, <-mockOdoo.LogsReceived, "fake-base64-logs-data")
+}
+
+func TestObox_ExecuteAction_Sync(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	m.executeAction(QueueAction{
+		UUID: "uuid-sync",
+		Payload: ActionPayload{
+			URL:    "/odoo/sync",
+			Method: "POST",
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-sync")
+	resultStr := <-mockOdoo.LastResult
+
+	var resMap map[string]string
+	testutil.ExpectedNoError(t, json.Unmarshal([]byte(resultStr), &resMap))
+	testutil.ExpectedEqual(t, resMap["status"], "ok")
+
+	// Verify that /obox/sync was transmitted to Odoo
+	state := <-mockOdoo.SyncReceived
+	testutil.ExpectedNotNil(t, state)
+	testutil.ExpectedEqual(t, state["name"], "OBOX App")
+	testutil.ExpectedNotNil(t, state["hardware"])
+	testutil.ExpectedNotNil(t, state["metrics"])
+	testutil.ExpectedNotNil(t, state["network"])
+	testutil.ExpectedNotNil(t, state["kiosk"])
+}
+
+func TestObox_ExecuteAction_KioskScreenLock_Flow(t *testing.T) {
+	mockOdoo := testutil.NewMockOdooServer(t)
+
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+
+	m := NewManager(4545, cfg, nil)
+	defer m.Stop()
+	m.setCredentials(mockOdoo.URL, "tok")
+
+	lockCh := make(chan bool, 2)
+	m.SetOnScreenLockChanged(func(locked bool) {
+		lockCh <- locked
+	})
+
+	// 1. Lock screen
+	m.executeAction(QueueAction{
+		UUID: "uuid-lock-true",
+		Payload: ActionPayload{
+			URL:     "/odoo/kiosk_screen_lock",
+			Method:  "POST",
+			Payload: json.RawMessage(`{"locked": true}`),
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-lock-true")
+	testutil.ExpectedTrue(t, m.IsScreenLocked())
+	testutil.ExpectedTrue(t, <-lockCh)
+
+	stateLocked := <-mockOdoo.SyncReceived
+	kioskLocked, ok := stateLocked["kiosk"].(map[string]interface{})
+	testutil.ExpectedTrue(t, ok)
+	testutil.ExpectedEqual(t, kioskLocked["out_of_service"], true)
+
+	// 2. Unlock screen
+	m.executeAction(QueueAction{
+		UUID: "uuid-lock-false",
+		Payload: ActionPayload{
+			URL:     "/odoo/kiosk_screen_lock",
+			Method:  "POST",
+			Payload: json.RawMessage(`{"locked": false}`),
+		},
+	})
+
+	testutil.ExpectedEqual(t, <-mockOdoo.ActionReported, "uuid-lock-false")
+	testutil.ExpectedFalse(t, m.IsScreenLocked())
+	testutil.ExpectedFalse(t, <-lockCh)
+
+	stateUnlocked := <-mockOdoo.SyncReceived
+	kioskUnlocked, ok := stateUnlocked["kiosk"].(map[string]interface{})
+	testutil.ExpectedTrue(t, ok)
+	testutil.ExpectedEqual(t, kioskUnlocked["out_of_service"], false)
+}

@@ -19,7 +19,7 @@ func OboxActionHandler(pm *printer.Manager) obox.ActionHandler {
 
 		switch {
 		case actionPath == "/odoo/discover_devices":
-			return buildDeviceList(pm), nil
+			return BuildDeviceList(pm), nil
 
 		case (strings.HasPrefix(actionPath, "/usb/v1/printer/") || strings.HasPrefix(actionPath, "/p/")) && strings.HasSuffix(actionPath, "/cgi-bin/epos/service.cgi"):
 			return printReceiptDirect(pm, actionPath, action.Payload.PayloadBytes()), nil
@@ -30,11 +30,24 @@ func OboxActionHandler(pm *printer.Manager) obox.ActionHandler {
 	}
 }
 
-func buildDeviceList(pm *printer.Manager) []map[string]string {
+func BuildDeviceList(pm *printer.Manager) []map[string]string {
 	discovered := pm.DiscoverAllPrinters()
 	list := make([]map[string]string, 0, len(discovered.Printers))
 	for _, p := range discovered.Printers {
 		list = append(list, map[string]string{
+			"name":       p.Name,
+			"identifier": p.Id,
+			"type":       "printer",
+		})
+	}
+	return list
+}
+
+func BuildDeviceListAsInterface(pm *printer.Manager) []map[string]interface{} {
+	discovered := pm.DiscoverAllPrinters()
+	list := make([]map[string]interface{}, 0, len(discovered.Printers))
+	for _, p := range discovered.Printers {
+		list = append(list, map[string]interface{}{
 			"name":       p.Name,
 			"identifier": p.Id,
 			"type":       "printer",

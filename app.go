@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -80,6 +80,24 @@ type App struct {
 	isRenderingWebApp bool
 	wailsAppURL       string
 	navStopChan       chan struct{}
+
+	sessionMu         sync.RWMutex
+	pendingSession    *pendingOdooSession
+	completedSessions map[string]*completedPairing
+}
+
+type completedPairing struct {
+	Nonce       string
+	InstanceID  string
+	Token       string
+	CompletedAt time.Time
+}
+
+type pendingOdooSession struct {
+	InstanceID  string
+	InstanceURL string
+	Nonce       string
+	ExpiresAt   time.Time
 }
 
 // showError surfaces an error to the user and logs any failure to do so.
@@ -159,7 +177,16 @@ func (a *App) startBackend() (int, error) {
 
 	a.printerManager = printer.NewManager(a.config)
 	a.obox = obox.NewManager(port, a.config, app_actions.OboxActionHandler(a.printerManager))
+	a.obox.SetDeviceProvider(func() []map[string]interface{} {
+		return app_actions.BuildDeviceListAsInterface(a.printerManager)
+	})
 	a.webserver = server.New(port, a.printerManager, a.obox, a.config, assets)
+	a.webserver.SetOnCompleteSessionPairing(func(nonce, instanceID, token, dbURL string, oboxID int) error {
+		return a.CompleteOdooSessionPairing(nonce, instanceID, token, dbURL, oboxID)
+	})
+	a.webserver.SetOnOdooSessionExit(func() {
+		a.ReturnFromOdooSession()
+	})
 	a.obox.SetOnStatusChange(func(status obox.ConnectionStatus) {
 		a.events.Emit(a.ctx, "odoo:status_changed", status)
 	})
@@ -170,6 +197,10 @@ func (a *App) startBackend() (int, error) {
 			a.events.Emit(a.ctx, "kiosk-state-changed", true)
 			a.events.Emit(a.ctx, "webview-config-changed")
 		}
+	})
+	a.obox.SetOnReloadKiosk(func() {
+		logger.Infof("Remote command received from Odoo queue: Reload Kiosk")
+		a.ReloadKiosk()
 	})
 
 	// Generate a unique session token that identifies requests from this
@@ -211,6 +242,14 @@ func (a *App) startBackend() (int, error) {
 
 func (a *App) shutdown(ctx context.Context) {
 	logger.Infof("Stopping Obox App server")
+
+	a.pinAuthMu.Lock()
+	if a.navStopChan != nil {
+		close(a.navStopChan)
+		a.navStopChan = nil
+	}
+	a.isRenderingWebApp = false
+	a.pinAuthMu.Unlock()
 
 	if a.obox != nil {
 		a.obox.Stop()
@@ -358,10 +397,14 @@ func (a *App) SetWindowFullscreen(fullscreen bool) {
 	}
 }
 
-// ReloadKiosk broadcasts a kiosk-reload event to reload the active kiosk iframe.
+// ReloadKiosk broadcasts a kiosk-reload event or reloads the active webview window.
 func (a *App) ReloadKiosk() {
 	if a.ctx != nil {
-		a.events.Emit(a.ctx, "kiosk-reload")
+		if a.IsRenderingWebApp() {
+			wailsruntime.WindowExecJS(a.ctx, "window.location.reload();")
+		} else {
+			a.events.Emit(a.ctx, "kiosk-reload")
+		}
 	}
 }
 
@@ -410,13 +453,22 @@ func (a *App) CompletePinAuth(success bool) {
 		a.pinAuthMu.Unlock()
 		a.SetWindowFullscreen(false)
 	} else {
-		// PIN cancelled or failed: return directly to WebApp in fullscreen
-		a.NavigateToWebApp()
+		// PIN cancelled or failed: return to WebApp only if enabled, else return to Wails app
+		if a.config.GetWebViewEnabled() {
+			a.NavigateToWebApp()
+		} else {
+			a.ReturnToWailsApp()
+		}
 	}
 }
 
 // NavigateToWebApp navigates the WebView directly to the configured WebApp URL in fullscreen with no menubar.
 func (a *App) NavigateToWebApp() {
+	if !a.config.GetWebViewEnabled() {
+		logger.Infof("NavigateToWebApp skipped: webview_enabled is false")
+		return
+	}
+
 	a.pinAuthMu.Lock()
 	a.pendingPinAuth = false
 	a.inManagement = false
@@ -447,17 +499,15 @@ func (a *App) NavigateToWebApp() {
 
 		script := a.getGestureScript()
 		go func() {
-			// Periodically inject non-blocking corner tap & shortcut listener across navigation
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-stopCh:
-					return
-				case <-ticker.C:
-					if a.ctx != nil {
-						wailsruntime.WindowExecJS(a.ctx, script)
-					}
+			select {
+			case <-stopCh:
+				return
+			case <-time.After(1500 * time.Millisecond):
+				a.pinAuthMu.Lock()
+				isRendering := a.isRenderingWebApp
+				a.pinAuthMu.Unlock()
+				if isRendering && a.ctx != nil {
+					wailsruntime.WindowExecJS(a.ctx, script)
 				}
 			}
 		}()
@@ -490,11 +540,55 @@ func (a *App) ReturnToWailsApp() {
 	}
 }
 
+// ReturnFromOdooSession returns from Odoo session pairing back to the Wails management app without requiring PIN.
+func (a *App) ReturnFromOdooSession() {
+	logger.Infof("Returning to Wails app from Odoo session")
+	a.pinAuthMu.Lock()
+	a.pendingPinAuth = false
+	a.inManagement = true
+	a.isRenderingWebApp = false
+	if a.navStopChan != nil {
+		close(a.navStopChan)
+		a.navStopChan = nil
+	}
+	target := a.wailsAppURL
+	a.pinAuthMu.Unlock()
+
+	if target == "" {
+		target = a.getWailsAppURL()
+	}
+
+	a.SetWindowFullscreen(false)
+
+	if a.ctx != nil {
+		logger.Infof("Navigating WebView back to Wails app URL: %s", target)
+		wailsruntime.WindowExecJS(a.ctx, fmt.Sprintf("window.location.replace(%q);", target))
+	}
+}
+
 // InjectGestureScript injects the non-blocking exit gesture and hotkey listener into the currently active page.
 func (a *App) InjectGestureScript() {
 	if a.ctx != nil {
 		script := a.getGestureScript()
 		wailsruntime.WindowExecJS(a.ctx, script)
+
+		a.sessionMu.Lock()
+		pending := a.pendingSession
+		a.sessionMu.Unlock()
+		if pending != nil {
+			var target *config.OdooInstance
+			for _, inst := range a.config.GetOdooInstances() {
+				if inst.ID == pending.InstanceID {
+					instCopy := inst
+					target = &instCopy
+					break
+				}
+			}
+			if target != nil {
+				sessionScript := a.getOdooSessionScript(target, pending.Nonce)
+				wailsruntime.WindowExecJS(a.ctx, sessionScript)
+			}
+		}
 	}
 }
 
@@ -517,170 +611,6 @@ func (a *App) getWailsAppURL() string {
 		return "https://wails.localhost/"
 	}
 	return "wails://app/index.html"
-}
-
-func (a *App) getGestureScript() string {
-	port := 4545
-	if a.webserver != nil && a.webserver.Port > 0 {
-		port = a.webserver.Port
-	}
-	wailsAppURL := a.getWailsAppURL()
-	exitCorners := a.config.GetWebViewExitCorners()
-	cornersJSON, err := json.Marshal(exitCorners)
-	if err != nil {
-		cornersJSON = []byte(`["top-right"]`)
-	}
-
-	return fmt.Sprintf(`(function() {
-  if (window.__eposProxyExitInstalled) return;
-  window.__eposProxyExitInstalled = true;
-
-  var CORNER_SIZE = 140;
-  var REQUIRED_TAPS = 4;
-  var RESET_MS = 1000;
-  var WAILS_APP_URL = %q;
-  var PROXY_PORT = %d;
-  var EXIT_CORNERS = %s;
-
-  var tapCount = 0;
-  var lastTapTime = 0;
-  var activeCorner = null;
-
-  function getTappedCorner(x, y) {
-    var w = window.innerWidth || document.documentElement.clientWidth || (document.body ? document.body.clientWidth : 0);
-    var h = window.innerHeight || document.documentElement.clientHeight || (document.body ? document.body.clientHeight : 0);
-    var corner = null;
-    if (x <= CORNER_SIZE && y <= CORNER_SIZE) {
-      corner = "top-left";
-    } else if (x >= w - CORNER_SIZE && y <= CORNER_SIZE) {
-      corner = "top-right";
-    } else if (x <= CORNER_SIZE && y >= h - CORNER_SIZE) {
-      corner = "bottom-left";
-    } else if (x >= w - CORNER_SIZE && y >= h - CORNER_SIZE) {
-      corner = "bottom-right";
-    }
-    if (corner && EXIT_CORNERS && EXIT_CORNERS.indexOf(corner) !== -1) {
-      return corner;
-    }
-    return null;
-  }
-
-  function flashIndicator(corner, count) {
-    try {
-      var dot = document.createElement("div");
-      dot.style.position = "fixed";
-      dot.style.width = "26px";
-      dot.style.height = "26px";
-      dot.style.borderRadius = "50%%";
-      dot.style.backgroundColor = count >= REQUIRED_TAPS ? "#10B981" : "#EF4444";
-      dot.style.zIndex = "2147483647";
-      dot.style.pointerEvents = "none";
-      dot.style.boxShadow = "0 0 10px rgba(0,0,0,0.5)";
-      dot.style.transition = "opacity 0.4s";
-
-      if (corner === "top-left") {
-        dot.style.top = "12px"; dot.style.left = "12px";
-      } else if (corner === "bottom-left") {
-        dot.style.bottom = "12px"; dot.style.left = "12px";
-      } else if (corner === "bottom-right") {
-        dot.style.bottom = "12px"; dot.style.right = "12px";
-      } else {
-        // Default: top-right
-        dot.style.top = "12px"; dot.style.right = "12px";
-      }
-
-      (document.body || document.documentElement).appendChild(dot);
-      setTimeout(function() {
-        dot.style.opacity = "0";
-        setTimeout(function() { dot.remove(); }, 400);
-      }, 350);
-    } catch (e) {}
-  }
-
-  function handleTap(x, y) {
-    var corner = getTappedCorner(x, y);
-    if (!corner) {
-      tapCount = 0;
-      activeCorner = null;
-      return false;
-    }
-
-    var now = Date.now();
-    if (activeCorner === corner && (now - lastTapTime) < RESET_MS) {
-      tapCount++;
-    } else {
-      activeCorner = corner;
-      tapCount = 1;
-    }
-    lastTapTime = now;
-
-    flashIndicator(corner, tapCount);
-
-    if (tapCount >= REQUIRED_TAPS) {
-      tapCount = 0;
-      activeCorner = null;
-      triggerExit();
-      return true;
-    }
-    return false;
-  }
-
-  function triggerExit() {
-    console.log("[ePOS] 4 taps detected on " + (activeCorner || "corner") + ", returning to Wails app");
-
-    // 1. Direct top-level navigation to local proxy exit endpoint
-    // Top-level navigation is never blocked by Mixed Content or CORS policies!
-    try {
-      window.location.replace("http://127.0.0.1:" + PROXY_PORT + "/api/kiosk/exit");
-      return;
-    } catch(e) {}
-
-    // 2. Direct navigation to WAILS_APP_URL
-    try {
-      if (WAILS_APP_URL) {
-        window.location.replace(WAILS_APP_URL + (WAILS_APP_URL.indexOf("?") >= 0 ? "&" : "?") + "kiosk_exit=1");
-        return;
-      }
-    } catch(e) {}
-
-    // 3. Fallback: beacon fetch
-    try {
-      fetch("http://127.0.0.1:" + PROXY_PORT + "/api/kiosk/exit", { method: "POST", mode: "no-cors" }).catch(function(){});
-    } catch(e) {}
-  }
-
-  var lastInputTime = 0;
-  function onInput(e) {
-    if (e.button && e.button !== 0) return;
-    var now = Date.now();
-    if (now - lastInputTime < 60) return;
-    lastInputTime = now;
-
-    var clientX = e.clientX;
-    var clientY = e.clientY;
-    if (e.touches && e.touches.length > 0) {
-      clientX = e.touches[0].clientX;
-      clientY = e.touches[0].clientY;
-    }
-    if (typeof clientX !== "number" || typeof clientY !== "number") return;
-
-    var triggered = handleTap(clientX, clientY);
-    if (triggered) {
-      try { e.preventDefault(); e.stopPropagation(); } catch (err) {}
-    }
-  }
-
-  window.addEventListener("pointerdown", onInput, true);
-  window.addEventListener("mousedown", onInput, true);
-  window.addEventListener("touchstart", onInput, true);
-
-  window.addEventListener("keydown", function(e) {
-    if (e.key === "Escape" || (e.ctrlKey && e.altKey && e.key.toLowerCase() === "s") || e.key === "F11") {
-      try { e.preventDefault(); } catch (err) {}
-      triggerExit();
-    }
-  }, true);
-})();`, wailsAppURL, port, string(cornersJSON))
 }
 
 func (a *App) ConfirmRemoveLANPrinter(ip string) (bool, error) {
@@ -879,4 +809,373 @@ func (a *App) Quit() {
 // startup; the token is never embedded in the built JS bundle.
 func (a *App) GetSessionToken() string {
 	return a.sessionToken
+}
+
+// GetOdooInstances returns all configured Odoo instances.
+func (a *App) GetOdooInstances() []config.OdooInstance {
+	return a.config.GetOdooInstances()
+}
+
+// AddOdooInstance adds and normalizes a new Odoo instance.
+func (a *App) AddOdooInstance(rawURL, name string) (config.OdooInstance, error) {
+	inst, err := a.config.AddOdooInstance(rawURL, name)
+	if err != nil {
+		return config.OdooInstance{}, err
+	}
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "odoo-instances-changed", a.config.GetOdooInstances())
+	}
+	return inst, nil
+}
+
+// RemoveOdooInstance deletes an Odoo instance by ID.
+func (a *App) RemoveOdooInstance(id string) error {
+	err := a.config.RemoveOdooInstance(id)
+	if err != nil {
+		return err
+	}
+	if !a.config.HasOdooCredentials() && a.obox != nil {
+		a.obox.Disconnect()
+	}
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "odoo-instances-changed", a.config.GetOdooInstances())
+		if a.obox != nil {
+			a.events.Emit(a.ctx, "odoo:status_changed", a.obox.ConnectionStatus())
+		}
+	}
+	return nil
+}
+
+// SetActiveOdooInstance switches active pairing to an already paired instance.
+func (a *App) SetActiveOdooInstance(id string) error {
+	err := a.config.SetActiveOdooInstance(id)
+	if err != nil {
+		return err
+	}
+	active := a.config.GetActiveOdooInstance()
+	if active != nil && active.Token != "" && a.obox != nil {
+		a.obox.Connect(active.URL, active.Token)
+	}
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "odoo-instances-changed", a.config.GetOdooInstances())
+		if a.obox != nil {
+			a.events.Emit(a.ctx, "odoo:status_changed", a.obox.ConnectionStatus())
+		}
+	}
+	return nil
+}
+
+// OpenOdooSession navigates the top-level WebView to the chosen Odoo instance with pairing support.
+func (a *App) OpenOdooSession(id string) error {
+	var target *config.OdooInstance
+	for _, inst := range a.config.GetOdooInstances() {
+		if inst.ID == id {
+			instCopy := inst
+			target = &instCopy
+			break
+		}
+	}
+	if target == nil {
+		return errors.New("odoo instance not found")
+	}
+
+	nonce := uuid.New().String()
+	a.sessionMu.Lock()
+	a.pendingSession = &pendingOdooSession{
+		InstanceID:  id,
+		InstanceURL: target.URL,
+		Nonce:       nonce,
+		ExpiresAt:   time.Now().Add(30 * time.Minute),
+	}
+	a.sessionMu.Unlock()
+
+	a.navigateToOdooSession(target, nonce)
+	return nil
+}
+
+func (a *App) navigateToOdooSession(target *config.OdooInstance, nonce string) {
+	a.pinAuthMu.Lock()
+	a.pendingPinAuth = false
+	a.inManagement = false
+	a.isRenderingWebApp = true
+	if a.navStopChan != nil {
+		close(a.navStopChan)
+	}
+	stopCh := make(chan struct{})
+	a.navStopChan = stopCh
+	a.pinAuthMu.Unlock()
+
+	targetURL := target.URL
+	if a.config.GetWebViewFullscreen() {
+		a.SetWindowFullscreen(true)
+	} else {
+		a.SetWindowFullscreen(false)
+	}
+
+	if a.ctx != nil {
+		wailsruntime.WindowShow(a.ctx)
+		wailsruntime.WindowUnminimise(a.ctx)
+		logger.Infof("Navigating top-level WebView to Odoo instance: %s", targetURL)
+		wailsruntime.WindowExecJS(a.ctx, fmt.Sprintf("window.location.replace(%q);", targetURL))
+
+		script := a.getOdooSessionScript(target, nonce)
+		gestureScript := a.getGestureScript()
+		go func() {
+			for _, d := range []time.Duration{800 * time.Millisecond, 2000 * time.Millisecond, 4000 * time.Millisecond} {
+				select {
+				case <-stopCh:
+					return
+				case <-time.After(d):
+					a.pinAuthMu.Lock()
+					isRendering := a.isRenderingWebApp
+					a.pinAuthMu.Unlock()
+					if isRendering && a.ctx != nil {
+						wailsruntime.WindowExecJS(a.ctx, script)
+						wailsruntime.WindowExecJS(a.ctx, gestureScript)
+					}
+				}
+			}
+		}()
+	}
+}
+
+func (a *App) getOdooSessionScript(target *config.OdooInstance, nonce string) string {
+	if target != nil && target.Token != "" {
+		return ""
+	}
+
+	platform := "android" //runtime.GOOS
+	if platform == "darwin" {
+		platform = "macos"
+	}
+
+	return fmt.Sprintf(`(function() {
+  function mount() {
+    var instanceID = %q;
+    var nonce = %q;
+    var serial = %q;
+    var platform = %q;
+    var wailsURL = %q;
+    var proxyPort = %d;
+
+    if (sessionStorage.getItem("__obox_paired_" + instanceID) === "1") return;
+    if (document.getElementById("__obox_session_bar")) return;
+    if (!document.body && !document.documentElement) return;
+
+    var bar = document.createElement("div");
+    bar.id = "__obox_session_bar";
+    bar.innerHTML = '<div style="position:fixed;top:12px;right:20px;z-index:2147483647;display:flex;align-items:center;gap:8px;background:rgba(17,24,39,0.95);color:#fff;padding:6px 14px;border-radius:9999px;font-size:12px;font-family:sans-serif;box-shadow:0 4px 16px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.2);user-select:none;">' +
+      '<span style="font-weight:700;color:#A78BFA;">OBOX</span><span>•</span>' +
+      '<button id="__obox_pair_btn" style="background:#714B67;color:#fff;border:none;border-radius:9999px;padding:4px 12px;font-weight:600;font-size:11px;cursor:pointer;">Pair with this Odoo</button>' +
+      '<button id="__obox_exit_btn" style="background:transparent;color:#9CA3AF;border:none;font-size:11px;cursor:pointer;padding:2px 6px;">Exit</button>' +
+      '</div>';
+
+    var btn = bar.querySelector("#__obox_pair_btn");
+    var exitBtn = bar.querySelector("#__obox_exit_btn");
+
+    exitBtn.onclick = function() {
+      try {
+        fetch("http://127.0.0.1:" + proxyPort + "/api/odoo/exit_session", { method: "POST" }).catch(function(){});
+      } catch (e) {}
+      try {
+        window.location.replace(wailsURL);
+      } catch (e) {
+        window.location.href = wailsURL;
+      }
+    };
+
+    btn.onclick = async function() {
+      btn.disabled = true;
+      btn.innerText = "Pairing...";
+
+      var name = "OBOX App";
+
+      try {
+        var res = null;
+        var orm = window.odoo?.__WOWL_DEBUG__?.root?.env?.services?.orm;
+        if (orm && typeof orm.call === "function") {
+          res = await orm.call("obox.obox", "pair_mobile_obox", [serial], {
+            platform: platform,
+            name: name
+          });
+        } else {
+          var r = await fetch("/web/dataset/call_kw/obox.obox/pair_mobile_obox", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              method: "call",
+              id: Date.now(),
+              params: {
+                model: "obox.obox",
+                method: "pair_mobile_obox",
+                args: [serial],
+                kwargs: { platform: platform, name: name }
+              }
+            })
+          });
+          var data = await r.json();
+          if (data.error) {
+            throw new Error(data.error.data?.message || data.error.message || JSON.stringify(data.error));
+          }
+          res = data.result;
+        }
+
+        if (!res || !res.token) {
+          throw new Error("Unexpected pairing response from Odoo: " + JSON.stringify(res));
+        }
+
+        btn.innerText = "✓ Paired!";
+        btn.style.background = "#059669";
+        btn.disabled = true;
+        sessionStorage.setItem("__obox_paired_" + instanceID, "1");
+
+        var payload = {
+          nonce: nonce,
+          instanceID: instanceID,
+          token: res.token,
+          oboxID: res.id || 0,
+          dbURL: res.url || window.location.origin
+        };
+
+        try {
+          await fetch("http://127.0.0.1:" + proxyPort + "/api/odoo/complete_session_pairing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } catch (localErr) {
+          console.warn("Could not notify local server of pairing:", localErr);
+        }
+      } catch (err) {
+        if (res && res.token) {
+          btn.innerText = "✓ Paired!";
+          btn.style.background = "#059669";
+          btn.disabled = true;
+          return;
+        }
+        alert("OBOX Pairing Error: " + err.message + "\n\nPlease ensure you are logged into Odoo on this page.");
+        btn.disabled = false;
+        btn.innerText = "Pair with this Odoo";
+      }
+    };
+
+    (document.body || document.documentElement).appendChild(bar);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mount);
+  } else {
+    mount();
+  }
+  setInterval(mount, 2000);
+})();`,
+		target.ID,
+		nonce,
+		a.config.GetAppID(),
+		platform,
+		a.getWailsAppURL(),
+		a.config.GetPort(),
+	)
+}
+
+// CompleteOdooSessionPairing completes the pairing from the Wails app frontend after returning from Odoo.
+func (a *App) CompleteOdooSessionPairing(nonce, instanceID, token, dbURL string, oboxID int) error {
+	a.sessionMu.Lock()
+	defer a.sessionMu.Unlock()
+
+	// 1. If this pairing was already completed recently with the same nonce, succeed idempotently.
+	if a.completedSessions != nil {
+		if comp, ok := a.completedSessions[nonce]; ok && comp.InstanceID == instanceID && time.Since(comp.CompletedAt) < 15*time.Minute {
+			logger.Infof("Session pairing for nonce %s was already completed successfully", nonce)
+			return nil
+		}
+	}
+
+	// 2. If instance is already paired with this token, succeed idempotently.
+	inst := a.config.GetOdooInstance(instanceID)
+	if inst != nil && inst.Token != "" && inst.Token == token {
+		logger.Infof("Instance %s is already paired with token", instanceID)
+		return nil
+	}
+
+	pending := a.pendingSession
+	if pending == nil || pending.Nonce != nonce || pending.InstanceID != instanceID || time.Now().After(pending.ExpiresAt) {
+		return errors.New("invalid or expired session pairing nonce")
+	}
+
+	if err := a.config.SaveOdooInstancePairing(instanceID, token, oboxID); err != nil {
+		return err
+	}
+
+	if dbURL == "" {
+		dbURL = pending.InstanceURL
+	}
+	if a.obox != nil {
+		a.obox.Connect(dbURL, token)
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := a.obox.Sync(ctx); err != nil {
+				logger.Warnf("[obox] Immediate sync after pairing error: %v", err)
+			}
+		}()
+	}
+
+	if a.completedSessions == nil {
+		a.completedSessions = make(map[string]*completedPairing)
+	}
+	a.completedSessions[nonce] = &completedPairing{
+		Nonce:       nonce,
+		InstanceID:  instanceID,
+		Token:       token,
+		CompletedAt: time.Now(),
+	}
+	a.pendingSession = nil
+
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "odoo-instances-changed", a.config.GetOdooInstances())
+		if a.obox != nil {
+			a.events.Emit(a.ctx, "odoo:status_changed", a.obox.ConnectionStatus())
+		}
+	}
+	return nil
+}
+
+// SyncOdooInstance manually triggers a sync of device state and devices with the given Odoo instance.
+func (a *App) SyncOdooInstance(id string) error {
+	if id == "" {
+		active := a.config.GetActiveOdooInstance()
+		if active == nil {
+			return errors.New("no active Odoo instance")
+		}
+		id = active.ID
+	}
+
+	inst := a.config.GetOdooInstance(id)
+	if inst == nil {
+		return errors.New("odoo instance not found")
+	}
+	if inst.Token == "" {
+		return errors.New("odoo instance is not paired")
+	}
+
+	if a.obox == nil {
+		return errors.New("obox manager not initialized")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	a.obox.Connect(inst.URL, inst.Token)
+
+	if err := a.obox.Sync(ctx); err != nil {
+		logger.Warnf("[obox] Manual sync for instance %s failed: %v", id, err)
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	logger.Infof("[obox] Manual sync for instance %s succeeded", id)
+	return nil
 }

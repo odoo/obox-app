@@ -9,6 +9,7 @@ import { errorText } from "../error";
 import {
   BoltIcon,
   DownloadIcon,
+  GlobeAltIcon,
   MonitorIcon,
   SettingsIcon,
   SpinnerIcon,
@@ -17,6 +18,7 @@ import {
 import { AppContext } from "../contexts/AppContext";
 import { WebViewContext } from "../contexts/WebViewContext";
 import WebViewDialog from "./WebViewDialog";
+import OdooSessionsDialog from "./OdooSessionsDialog";
 
 export default function HeaderMenu() {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -28,6 +30,7 @@ export default function HeaderMenu() {
   const [isLoadingAutostart, setIsLoadingAutostart] = useState(false);
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
   const [kioskOpenSignal, setKioskOpenSignal] = useState(0);
+  const [odooSessionsOpenSignal, setOdooSessionsOpenSignal] = useState(0);
 
   const { autoStart, networkPrintingEnabled, isWails } = appContext.data;
 
@@ -91,6 +94,11 @@ export default function HeaderMenu() {
   const handleOpenKiosk = () => {
     setIsOpen(false);
     setKioskOpenSignal((prev) => prev + 1);
+  };
+
+  const handleOpenOdooSessions = () => {
+    setIsOpen(false);
+    setOdooSessionsOpenSignal((prev) => prev + 1);
   };
 
   return (
@@ -211,6 +219,26 @@ export default function HeaderMenu() {
 
             <button
               type="button"
+              onClick={handleOpenOdooSessions}
+              className="w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-100/80 text-odoo flex items-center justify-center shrink-0">
+                  <GlobeAltIcon className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-gray-800">
+                    Odoo Sessions
+                  </div>
+                  <div className="text-[10px] text-gray-500 truncate">
+                    Connect & pair with Odoo instances
+                  </div>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
               onClick={handleDownloadLogs}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
             >
@@ -230,6 +258,7 @@ export default function HeaderMenu() {
         </div>
       )}
       <WebViewDialog openSignal={kioskOpenSignal} />
+      <OdooSessionsDialog openSignal={odooSessionsOpenSignal} />
     </div>
   );
 }

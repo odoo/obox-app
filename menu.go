@@ -33,5 +33,9 @@ func createMenu(app *App) *menu.Menu {
 		wailsruntime.EventsEmit(app.ctx, "open-set-pin-dialog")
 	})
 
+	appMenu.AddText("Odoo Sessions", nil, func(_ *menu.CallbackData) {
+		wailsruntime.EventsEmit(app.ctx, "open-odoo-sessions-dialog")
+	})
+
 	return mainMenu
 }

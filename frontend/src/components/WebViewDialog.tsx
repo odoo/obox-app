@@ -291,6 +291,35 @@ export default function WebViewDialog({
     );
   };
 
+  const handleToggleAutoOpen = async () => {
+    const nextVal = !cfg?.enabled;
+    if (nextVal && !canEnable) {
+      if (!isUrlValid) {
+        setLocalError("Please enter a valid POS URL before enabling kiosk auto-open.");
+      } else if (!cfg?.hasPIN) {
+        setLocalError("Please configure an Admin PIN before enabling kiosk auto-open.");
+      }
+      return;
+    }
+
+    try {
+      await gate(async () => {
+        if (url.trim() && url.trim() !== cfg?.url) {
+          await actions.saveURL(url.trim());
+        }
+        await actions.toggleEnabled(nextVal);
+      });
+      toastContext.actions.showToast(
+        nextVal
+          ? "Kiosk auto-open enabled (will launch on startup)"
+          : "Kiosk auto-open disabled (starts in management console)",
+        "success"
+      );
+    } catch (err: unknown) {
+      setLocalError(String(err) || "Failed to toggle kiosk auto-open.");
+    }
+  };
+
   const handleToggleKiosk = async () => {
     if (isKioskCurrentlyActive) {
       await handleCloseKiosk();
@@ -566,6 +595,71 @@ export default function WebViewDialog({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* ── Section: Auto-open Kiosk on Startup Toggle ── */}
+            <div className="rounded-2xl border border-gray-200/90 bg-white p-4 sm:p-5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                      cfg?.enabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
+                    <PlayCircleIcon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700">
+                        Auto-open Kiosk on Startup
+                      </h4>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          cfg?.enabled
+                            ? "bg-green-100 text-green-800"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {cfg?.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-500 leading-snug">
+                      When enabled, the app automatically opens the configured POS kiosk screen on launch. When disabled, it stays in this management console.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center shrink-0 ml-4">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(cfg?.enabled)}
+                    disabled={!cfg?.enabled && !canEnable}
+                    onClick={handleToggleAutoOpen}
+                    title={
+                      !cfg?.enabled && !canEnable
+                        ? "Configure a valid POS URL and PIN first"
+                        : cfg?.enabled
+                        ? "Click to disable automatic kiosk launch"
+                        : "Click to enable automatic kiosk launch"
+                    }
+                    className={`
+                      relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent
+                      transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-odoo/30
+                      ${cfg?.enabled ? "bg-odoo" : "bg-gray-300"}
+                      ${!cfg?.enabled && !canEnable ? "opacity-50 cursor-not-allowed" : ""}
+                    `}
+                  >
+                    <span
+                      className={`
+                        pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0
+                        transition duration-200 ease-in-out
+                        ${cfg?.enabled ? "translate-x-5" : "translate-x-0"}
+                      `}
+                    />
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* ── Section: Display Mode Selection (Fullscreen vs Windowed) ── */}

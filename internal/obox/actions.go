@@ -1,9 +1,17 @@
 package obox
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image/jpeg"
 	"net/url"
+	"os"
+	"path/filepath"
+
+	"github.com/kbinani/screenshot"
 
 	"obox-app/internal/logger"
 )
@@ -11,6 +19,53 @@ import (
 type openKioskPayload struct {
 	URL      string `json:"url"`
 	Timezone string `json:"timezone"`
+}
+
+var (
+	screenshotFunc = defaultCaptureScreenshot
+	readLogsFunc   = defaultReadAppLogs
+)
+
+func defaultCaptureScreenshot() (string, error) {
+	n := screenshot.NumActiveDisplays()
+	if n <= 0 {
+		return "", errors.New("no active display found for screenshot")
+	}
+
+	bounds := screenshot.GetDisplayBounds(0)
+	img, err := screenshot.CaptureRect(bounds)
+	if err != nil {
+		return "", fmt.Errorf("failed to capture screenshot: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 75}); err != nil {
+		return "", fmt.Errorf("failed to encode screenshot: %w", err)
+	}
+
+	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+func defaultReadAppLogs() (string, error) {
+	logDir := logger.LogDirectory()
+	if logDir == "" {
+		dir, err := os.UserConfigDir()
+		if err == nil {
+			logDir = filepath.Join(dir, "OboxApp", "logs")
+		}
+	}
+	logPath := filepath.Join(logDir, "obox-app.log")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read log file: %w", err)
+	}
+
+	const maxLogBytes = 1024 * 1024
+	if len(data) > maxLogBytes {
+		data = data[len(data)-maxLogBytes:]
+	}
+
+	return base64.StdEncoding.EncodeToString(data), nil
 }
 
 func (m *Manager) executeAction(action QueueAction) {
@@ -89,6 +144,83 @@ func (m *Manager) executeAction(action QueueAction) {
 		m.notifyOpenKiosk(kioskURL)
 
 		result = map[string]string{"status": "opened"}
+		m.reportActionResult(action.UUID, result)
+		return
+
+	case "/odoo/sync":
+		logger.Debugf("[obox queue] Action sync received")
+		go func() {
+			if err := m.Sync(m.ctx); err != nil {
+				logger.Warnf("[obox queue] Action sync error: %v", err)
+			}
+		}()
+		result = map[string]string{"status": "ok"}
+		m.reportActionResult(action.UUID, result)
+		return
+
+	case "/odoo/kiosk_reload":
+		logger.Debugf("[obox queue] Action kiosk_reload received")
+		m.notifyReloadKiosk()
+		result = map[string]string{"status": "ok"}
+		m.reportActionResult(action.UUID, result)
+		return
+
+	case "/odoo/kiosk_screen_lock":
+		logger.Debugf("[obox queue] Action kiosk_screen_lock received")
+		payloadBytes := action.Payload.PayloadBytes()
+		locked := false
+		if len(payloadBytes) > 0 {
+			var p struct {
+				Locked bool `json:"locked"`
+			}
+			if err := json.Unmarshal(payloadBytes, &p); err == nil {
+				locked = p.Locked
+			}
+		}
+		logger.Infof("[obox queue] Action kiosk_screen_lock: locked=%v", locked)
+		m.SetScreenLocked(locked)
+		go func() {
+			if err := m.Sync(m.ctx); err != nil {
+				logger.Warnf("[obox queue] Sync error after screen lock change: %v", err)
+			}
+		}()
+		result = map[string]string{"status": "ok"}
+		m.reportActionResult(action.UUID, result)
+		return
+
+	case "/odoo/screenshot":
+		logger.Debugf("[obox queue] Action screenshot received")
+		screenshotBase64, err := screenshotFunc()
+		if err != nil {
+			logger.Errorf("[obox queue] Action screenshot error: %v", err)
+			result = map[string]string{"error": err.Error()}
+			m.reportActionResult(action.UUID, result)
+			return
+		}
+
+		if err := m.sendScreenshot(screenshotBase64); err != nil {
+			logger.Warnf("[obox queue] Failed to upload screenshot to Odoo: %v", err)
+		}
+
+		result = map[string]string{"status": "ok"}
+		m.reportActionResult(action.UUID, result)
+		return
+
+	case "/odoo/logs":
+		logger.Debugf("[obox queue] Action logs received")
+		logsBase64, err := readLogsFunc()
+		if err != nil {
+			logger.Errorf("[obox queue] Action logs error: %v", err)
+			result = map[string]string{"error": err.Error()}
+			m.reportActionResult(action.UUID, result)
+			return
+		}
+
+		if err := m.sendLogs(logsBase64); err != nil {
+			logger.Warnf("[obox queue] Failed to upload logs to Odoo: %v", err)
+		}
+
+		result = map[string]string{"status": "ok"}
 		m.reportActionResult(action.UUID, result)
 		return
 

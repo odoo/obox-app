@@ -53,6 +53,18 @@ type Manager struct {
 	kioskMu     sync.Mutex
 	onOpenKiosk func(url string)
 
+	reloadMu      sync.Mutex
+	onReloadKiosk func()
+
+	screenLocked         atomic.Bool
+	appliedConfigVersion atomic.Pointer[string]
+
+	lockMu              sync.Mutex
+	onScreenLockChanged func(bool)
+
+	devMu          sync.Mutex
+	deviceProvider func() []map[string]interface{}
+
 	connectMu     sync.Mutex
 	connectCancel *cancelHandle
 
@@ -303,6 +315,69 @@ func (m *Manager) notifyOpenKiosk(url string) {
 	if fn != nil {
 		go fn(url)
 	}
+}
+
+// SetOnReloadKiosk registers a callback invoked when kiosk_reload is received via queue action.
+func (m *Manager) SetOnReloadKiosk(fn func()) {
+	m.reloadMu.Lock()
+	m.onReloadKiosk = fn
+	m.reloadMu.Unlock()
+}
+
+func (m *Manager) notifyReloadKiosk() {
+	m.reloadMu.Lock()
+	fn := m.onReloadKiosk
+	m.reloadMu.Unlock()
+
+	if fn != nil {
+		go fn()
+	}
+}
+
+// IsScreenLocked returns whether the screen/kiosk is locked by Odoo admin.
+func (m *Manager) IsScreenLocked() bool {
+	return m.screenLocked.Load()
+}
+
+// SetScreenLocked updates the screen lock state and triggers any listener.
+func (m *Manager) SetScreenLocked(locked bool) {
+	prev := m.screenLocked.Swap(locked)
+	if prev != locked {
+		m.lockMu.Lock()
+		fn := m.onScreenLockChanged
+		m.lockMu.Unlock()
+		if fn != nil {
+			go fn(locked)
+		}
+	}
+}
+
+// SetOnScreenLockChanged registers a callback invoked when kiosk_screen_lock changes.
+func (m *Manager) SetOnScreenLockChanged(fn func(bool)) {
+	m.lockMu.Lock()
+	m.onScreenLockChanged = fn
+	m.lockMu.Unlock()
+}
+
+// GetAppliedConfigVersion returns the last applied configuration hash from Odoo.
+func (m *Manager) GetAppliedConfigVersion() string {
+	ptr := m.appliedConfigVersion.Load()
+	if ptr == nil {
+		return ""
+	}
+	return *ptr
+}
+
+// SetAppliedConfigVersion updates the applied configuration hash from Odoo.
+func (m *Manager) SetAppliedConfigVersion(ver string) {
+	m.appliedConfigVersion.Store(&ver)
+}
+
+// SetDeviceProvider registers a callback that supplies currently discovered devices for sync.
+func (m *Manager) SetDeviceProvider(fn func() []map[string]interface{}) {
+	m.devMu.Lock()
+	m.deviceProvider = fn
+	m.devMu.Unlock()
 }
 
 func (m *Manager) setWsStatus(status ConnectionState) {

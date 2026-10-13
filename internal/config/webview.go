@@ -28,6 +28,13 @@ func (cm *Manager) HasWebViewPIN() bool {
 	return cm.Data.WebViewPIN != ""
 }
 
+// GetWebViewPIN returns the stored PIN (default "0000").
+func (cm *Manager) GetWebViewPIN() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.Data.WebViewPIN
+}
+
 // SetWebViewURL validates and persists the kiosk URL.
 func (cm *Manager) SetWebViewURL(rawURL string) error {
 	trimmed := strings.TrimSpace(rawURL)
