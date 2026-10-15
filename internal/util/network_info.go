@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 )
 
 const LOCALHOST_IP = "127.0.0.1"

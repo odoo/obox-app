@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestParseXML_MissingRoot_MalformedXML(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 
 	"github.com/google/gousb"
 )

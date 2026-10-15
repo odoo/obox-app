@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMountTransition } from "../hooks/useMountTransition";
 import CloseButton from "./CloseButton";
@@ -24,6 +24,23 @@ interface DialogProps {
   showTitleDivider?: boolean;
   /** Bump this value (e.g. a counter) to open the dialog programmatically, without an openButton. */
   openSignal?: number;
+  /** Bump this value to close the dialog programmatically. */
+  closeSignal?: number;
+  maxWidth?: string;
+}
+
+function useSignal(signal: number | undefined, callback: () => void) {
+  const prevSignal = useRef(signal);
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  useEffect(() => {
+    if (signal === undefined || signal === prevSignal.current) {
+      return;
+    }
+    prevSignal.current = signal;
+    callbackRef.current();
+  }, [signal]);
 }
 
 export default function Dialog({
@@ -35,11 +52,12 @@ export default function Dialog({
   onOpen,
   showTitleDivider = false,
   openSignal,
+  closeSignal,
+  maxWidth = "max-w-sm",
 }: DialogProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const { mounted } = useMountTransition(isOpen);
-  const previousOpenSignal = useRef(openSignal);
 
   const close = () => {
     setIsOpen(false);
@@ -51,14 +69,8 @@ export default function Dialog({
     onOpen?.();
   };
 
-  useEffect(() => {
-    if (openSignal === undefined || openSignal === previousOpenSignal.current) {
-      return;
-    }
-
-    previousOpenSignal.current = openSignal;
-    open();
-  }, [openSignal]);
+  useSignal(openSignal, open);
+  useSignal(closeSignal, close);
 
   const isExecuting = useRef(false);
 
@@ -118,7 +130,13 @@ export default function Dialog({
 
   return (
     <>
-      {openButton && <div onClick={() => open()}>{openButton}</div>}
+      {isValidElement(openButton) &&
+        cloneElement(openButton as React.ReactElement<{ onClick?: (e: React.MouseEvent) => void }>, {
+          onClick: (e: React.MouseEvent) => {
+            (openButton.props as { onClick?: (e: React.MouseEvent) => void }).onClick?.(e);
+            open();
+          },
+        })}
       {mounted &&
         createPortal(
           <div
@@ -132,8 +150,8 @@ export default function Dialog({
               onClick={() => close()}
             />
 
-            <div className={`relative bg-white rounded-2xl w-full max-w-sm max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto overflow-x-hidden p-6 ${showTitleDivider ? "pt-4" : ""}`}>
-              <div className={`flex items-center justify-between  ${showTitleDivider ? "pb-3 mb-4 border-b border-gray-200" : "mb-5"}`}>
+            <div className={`relative bg-white rounded-2xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto p-6 ${showTitleDivider ? "pt-4" : ""}`}>
+              <div className={`flex items-center justify-between ${showTitleDivider ? "pb-3 mb-4 border-b border-gray-200" : "mb-5"}`}>
                 <div className="text-lg font-medium">{title}</div>
                 <CloseButton onClick={() => close()} />
               </div>
