@@ -11,7 +11,8 @@ export default function NetworkPrinting() {
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const [info, setInfo] = useState<main.TroubleshootInfo | null>(null);
 
-  const enabled = appContext.data.networkPrintingEnabled;
+  const enabled = appContext.data.settings.networkPrintingEnabled;
+  const os = appContext.data.system.os;
 
   const fetchInfo = async () => {
     setIsLoadingInfo(true);
@@ -35,17 +36,17 @@ export default function NetworkPrinting() {
 
   const steps = useMemo<Step[]>(() => {
     if (!info) return [];
-    if (appContext.data.isWindows) {
+    if (os === "windows") {
       return getWindowsSteps(info);
     }
-    if (appContext.data.isLinux) {
+    if (os === "linux") {
       return getLinuxSteps(info);
     }
-    if (appContext.data.isMac) {
+    if (os === "darwin") {
       return getMacSteps(info);
     }
     return [];
-  }, [info]);
+  }, [info, os]);
 
   if (!enabled) {
     return null;

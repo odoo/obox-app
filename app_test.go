@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"obox-app/buildinfo"
 	"obox-app/internal/app_actions"
 	"obox-app/internal/config"
 	"obox-app/internal/logger"
@@ -223,10 +224,13 @@ func TestApp_AppVariableAndPrintersAndGetPrinterUrl(t *testing.T) {
 
 	appVariable := app.AppVariable()
 	testutil.ExpectedEqual(t, appVariable.AppID, cfg.GetAppID())
-	testutil.ExpectedEqual(t, appVariable.IPAddress, util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled()))
+	testutil.ExpectedEqual(t, appVariable.Server.IPAddress, util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled()))
 	testutil.ExpectedEqual(t, util.GetPrinterUrl(srv.Port, app.config.IsNetworkPrintingEnabled(), "czpTTjEyMzQ1Ng"), fmt.Sprintf("%s/p/czpTTjEyMzQ1Ng", util.LocalAddr(srv.Port, app.config.IsNetworkPrintingEnabled())))
-	testutil.ExpectedTrue(t, appVariable.ServerRunning, "Expected ServerRunning to be true")
-	testutil.ExpectedTrue(t, appVariable.OS != "", "Expected non-empty Os field in app variable")
+	testutil.ExpectedTrue(t, appVariable.Server.Running, "Expected ServerRunning to be true")
+	testutil.ExpectedTrue(t, appVariable.System.OS != "", "Expected non-empty OS field in app variable")
+	testutil.ExpectedEqual(t, appVariable.Build.Version, buildinfo.Version)
+	testutil.ExpectedEqual(t, appVariable.Build.BuildTime, buildinfo.BuildTime)
+	testutil.ExpectedEqual(t, appVariable.Build.Commit, buildinfo.Commit)
 
 	// Verify Printers() includes the configured LAN printer
 	printers := app.Printers()
@@ -368,12 +372,18 @@ func TestApp_DownloadLogs(t *testing.T) {
 		return dir
 	}
 
+	newAppWithDialogs := func(t *testing.T, dialogs dialoger) *App {
+		cfg, err := config.NewManager()
+		testutil.ExpectedNoError(t, err)
+		return &App{config: cfg, dialogs: dialogs}
+	}
+
 	t.Run("writes archive to the chosen path", func(t *testing.T) {
 		initLogs(t)
 		savePath := filepath.Join(t.TempDir(), "logs.zip")
 
 		dialogs := &fakeDialogs{savePath: savePath}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -391,7 +401,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 
 		// Wails returns an empty path when the user dismisses the dialog.
 		dialogs := &fakeDialogs{savePath: ""}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -403,7 +413,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 		initLogs(t)
 
 		dialogs := &fakeDialogs{saveErr: errors.New("dialog unavailable")}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -418,7 +428,7 @@ func TestApp_DownloadLogs(t *testing.T) {
 		// Parent directory does not exist, so creating the archive fails.
 		savePath := filepath.Join(t.TempDir(), "missing", "logs.zip")
 		dialogs := &fakeDialogs{savePath: savePath}
-		app := &App{dialogs: dialogs}
+		app := newAppWithDialogs(t, dialogs)
 
 		app.DownloadLogs()
 
@@ -503,8 +513,8 @@ func TestApp_NetworkPrintingEnabled(t *testing.T) {
 
 	appVar, ok := evts[0].Data[0].(AppVariable)
 	testutil.ExpectedTrue(t, ok, "expected payload to be AppVariable")
-	testutil.ExpectedEqual(t, appVar.IPAddress, util.LocalAddr(srv.Port, true))
-	testutil.ExpectedTrue(t, appVar.NetworkPrintingEnabled)
+	testutil.ExpectedEqual(t, appVar.Server.IPAddress, util.LocalAddr(srv.Port, true))
+	testutil.ExpectedTrue(t, appVar.Settings.NetworkPrintingEnabled)
 }
 
 func TestApp_GetTroubleshootInfo(t *testing.T) {
@@ -592,4 +602,49 @@ func TestApp_Shutdown_StopsOboxAndServer(t *testing.T) {
 		obox:      nil,
 	}
 	appNil.shutdown(context.Background())
+}
+
+func newTestConfig(t *testing.T) *config.Manager {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	cfg, err := config.NewManager()
+	testutil.ExpectedNoError(t, err)
+	return cfg
+}
+
+func newTestServerApp(t *testing.T) (*App, *config.Manager) {
+	t.Helper()
+	cfg := newTestConfig(t)
+	port := testutil.GetFreePort(t)
+	srv := server.New(port, nil, nil)
+	t.Cleanup(func() { _ = srv.Stop() })
+
+	app := &App{
+		config:    cfg,
+		webserver: srv,
+		events:    runtimeEvents{},
+		autoStart: &autostart.App{
+			Name:        config.AppName,
+			DisplayName: "Obox App",
+			Exec:        []string{"obox-app"},
+		},
+	}
+	return app, cfg
+}
+
+func TestApp_DebugModeEnabled(t *testing.T) {
+	app, _ := newTestServerApp(t)
+
+	testutil.ExpectedNoError(t, app.ToggleDebugMode())
+	testutil.ExpectedTrue(t, app.AppVariable().Settings.DebugMode)
+	testutil.ExpectedTrue(t, logger.IsDebugMode())
+}
+
+func TestApp_UpdateMethods(t *testing.T) {
+	cfg := newTestConfig(t)
+	app := &App{config: cfg}
+
+	testutil.ExpectedEqual(t, cfg.LastSeenUpdate(), "")
+	testutil.ExpectedNoError(t, app.MarkUpdateSeen("1.2.3"))
+	testutil.ExpectedEqual(t, cfg.LastSeenUpdate(), "1.2.3")
 }

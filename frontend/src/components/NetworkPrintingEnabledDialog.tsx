@@ -10,7 +10,7 @@ export default function NetworkPrintingEnabledDialog() {
   const [localIp, setLocalIp] = useState<string | null>(null);
   const isInitialMount = useRef(true);
   const appContext = useContext(AppContext);
-  const { networkPrintingEnabled, isLoading } = appContext.data;
+  const { settings: { networkPrintingEnabled }, isLoading } = appContext.data;
   const prevEnabled = useRef(networkPrintingEnabled);
 
   useEffect(() => {

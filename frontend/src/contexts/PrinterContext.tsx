@@ -5,8 +5,7 @@ import {
   ConfirmRemoveLANPrinter,
   Printers,
 } from "../../wailsjs/go/main/App";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { AppContext } from "./AppContext";
+import { createContext, useCallback, useEffect, useRef, useState } from "react";
 
 const POLL_INTERVAL = 5000;
 const FETCH_ERROR = "Failed to retrieve printer status. Please try again.";

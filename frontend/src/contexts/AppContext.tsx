@@ -1,4 +1,4 @@
-import { createContext, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useState } from "react";
 import { main } from "../../wailsjs/go/models";
 import { AppVariable } from "../../wailsjs/go/main/App";
 import { EventsOn } from "../../wailsjs/runtime/runtime";
@@ -8,19 +8,17 @@ const RETRY_INTERVAL = 5000;
 type AppContextType = {
   setters: {};
   data: {
-    os: string | null;
-    app: main.AppVariable | null;
     appId: string;
-    ipAddress: string;
-    isWindows: boolean;
-    isMac: boolean;
-    isLinux: boolean;
-    serverIsRunning: boolean;
-    networkPrintingEnabled: boolean;
-    autoStart: boolean;
+    server: main.ServerInfo;
+    system: main.SystemInfo;
+    build: main.BuildInfo;
+    settings: main.Settings;
     isLoading: boolean;
+    aboutSignal: number;
   };
-  actions: {};
+  actions: {
+    openAbout: () => void;
+  };
 };
 
 export const AppContext = createContext({} as AppContextType);
@@ -31,23 +29,23 @@ interface AppContextWrapper {
 
 export const AppContextWrapper = ({ children }: AppContextWrapper) => {
   const [app, setApp] = useState<main.AppVariable | null>(null);
+  const [aboutSignal, setAboutSignal] = useState(0);
 
-  const os = app?.os || null;
+  const openAbout = useCallback(() => {
+    setAboutSignal((prev) => prev + 1);
+  }, []);
+
   const data = {
-    app,
-    os,
     appId: app?.appId || "",
-    ipAddress: app?.ipAddress || "",
-    isWindows: os === "windows",
-    isMac: os === "darwin",
-    isLinux: os === "linux",
-    serverIsRunning: app?.serverRunning ?? false,
-    autoStart: app?.autoStart ?? false,
-    networkPrintingEnabled: app?.networkPrintingEnabled ?? false,
+    server: app?.server || {} as main.ServerInfo,
+    system: app?.system || {} as main.SystemInfo,
+    build: app?.build || {} as main.BuildInfo,
+    settings: app?.settings || {} as main.Settings,
     isLoading: app === null,
+    aboutSignal,
   };
   const setters = {};
-  const actions = {};
+  const actions = { openAbout };
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +58,7 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
           return;
         }
 
-        setApp(variables);
+        setApp(main.AppVariable.createFrom(variables));
       } catch (error) {
         console.error("Failed to fetch app context:", error);
         if (!cancelled) {
@@ -70,7 +68,9 @@ export const AppContextWrapper = ({ children }: AppContextWrapper) => {
     };
 
     const unsubscribe = EventsOn("app:variables_changed", (variables: main.AppVariable) => {
-      setApp(variables);
+      if (variables) {
+        setApp(main.AppVariable.createFrom(variables));
+      }
     });
 
     fetchAppContext();

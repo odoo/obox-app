@@ -159,13 +159,42 @@ export const UsbIcon = ({ className = "w-4 h-4", ...props }: IconProps) => (
   </svg>
 );
 
-export const PrinterTypeIcon = ({
-  printer,
-  className = "w-4 h-4",
-}: {
-  printer: { isLAN: boolean };
-  className?: string;
-}) => {
+export const PrinterTypeIcon = ({ printer, className = "w-4 h-4" }: { printer: { isLAN: boolean }; className?: string; }) => {
   if (printer.isLAN) return <WifiIcon className={className} />;
   return <UsbIcon className={className} />;
 };
+
+export const BugIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path d="m8 2 1.88 1.88" />
+    <path d="M14.12 3.88 16 2" />
+    <path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1" />
+    <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6" />
+    <path d="M12 20v-9" />
+    <path d="M6.53 9C4.6 8.8 3 7.1 3 5" />
+    <path d="M6 13H2" />
+    <path d="M3 21c0-2.1 1.7-3.9 3.8-4" />
+    <path d="M20.97 5c0 2.1-1.6 3.8-3.5 4" />
+    <path d="M22 13h-4" />
+    <path d="M17.2 17c2.1.1 3.8 1.9 3.8 4" />
+  </Base24Svg>
+);
+
+export const SpinnerIcon = ({ className = "w-4 h-4 animate-spin text-odoo", ...props }: IconProps) => (
+  <Base24Svg className={className} {...props}>
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+  </Base24Svg>
+);
+
+export const RefreshIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </Base24Svg>
+);
+
+export const ExternalLinkIcon = (props: IconProps) => (
+  <Base24Svg {...props}>
+    <path d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+  </Base24Svg>
+);

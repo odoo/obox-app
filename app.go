@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
+	"obox-app/buildinfo"
 	"obox-app/internal/app_actions"
 	"obox-app/internal/config"
 	"obox-app/internal/logger"
 	"obox-app/internal/obox"
 	"obox-app/internal/printer"
 	"obox-app/internal/server"
+	"obox-app/internal/update"
 	"obox-app/internal/util"
 
 	autostart "github.com/emersion/go-autostart"
@@ -65,6 +68,7 @@ type App struct {
 	autoStart      *autostart.App
 	dialogs        dialoger
 	events         emitter
+	restart        atomic.Bool
 }
 
 // showError surfaces an error to the user and logs any failure to do so.
@@ -78,13 +82,38 @@ func (a *App) showError(title, message string) {
 	}
 }
 
+type ServerInfo struct {
+	IPAddress string `json:"ipAddress"`
+	Port      int    `json:"port"`
+	Running   bool   `json:"running"`
+}
+
+type SystemInfo struct {
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	GoVersion string `json:"goVersion"`
+	Hostname  string `json:"hostname"`
+}
+
+type BuildInfo struct {
+	Version   string `json:"version"`
+	BuildTime string `json:"buildTime"`
+	Commit    string `json:"commit"`
+	Dev       bool   `json:"dev"`
+}
+
+type Settings struct {
+	AutoStart              bool `json:"autoStart"`
+	NetworkPrintingEnabled bool `json:"networkPrintingEnabled"`
+	DebugMode              bool `json:"debugMode"`
+}
+
 type AppVariable struct {
-	AppID                  string `json:"appId"`
-	IPAddress              string `json:"ipAddress"`
-	ServerRunning          bool   `json:"serverRunning"`
-	OS                     string `json:"os"`
-	NetworkPrintingEnabled bool   `json:"networkPrintingEnabled"`
-	AutoStart              bool   `json:"autoStart"`
+	AppID    string     `json:"appId"`
+	Server   ServerInfo `json:"server"`
+	System   SystemInfo `json:"system"`
+	Build    BuildInfo  `json:"build"`
+	Settings Settings   `json:"settings"`
 }
 
 func NewApp() *App {
@@ -109,6 +138,7 @@ func NewApp() *App {
 	}
 	logger.Debugf("Config loaded from %s", cfg.Path())
 	a.config = cfg
+	logger.SetDebugMode(cfg.IsDebugMode())
 
 	return a
 }
@@ -147,14 +177,34 @@ func (a *App) notifyAppVariablesChanged() {
 }
 
 func (a *App) AppVariable() AppVariable {
+	debugMode := a.config.IsDebugMode()
+	logger.SetDebugMode(debugMode)
 	networkEnabled := a.config.IsNetworkPrintingEnabled()
+	hostname, _ := os.Hostname()
 	return AppVariable{
-		AppID:                  a.config.GetAppID(),
-		IPAddress:              util.LocalAddr(a.webserver.Port, networkEnabled),
-		OS:                     runtime.GOOS,
-		ServerRunning:          a.webserver.Running(),
-		AutoStart:              a.autoStart.IsEnabled(),
-		NetworkPrintingEnabled: networkEnabled,
+		AppID: a.config.GetAppID(),
+		Server: ServerInfo{
+			IPAddress: util.LocalAddr(a.webserver.Port, networkEnabled),
+			Port:      a.webserver.Port,
+			Running:   a.webserver.Running(),
+		},
+		System: SystemInfo{
+			OS:        runtime.GOOS,
+			Arch:      runtime.GOARCH,
+			GoVersion: runtime.Version(),
+			Hostname:  hostname,
+		},
+		Build: BuildInfo{
+			Version:   buildinfo.Version,
+			BuildTime: buildinfo.BuildTime,
+			Commit:    buildinfo.Commit,
+			Dev:       a.ctx != nil && wailsruntime.Environment(a.ctx).BuildType == "dev",
+		},
+		Settings: Settings{
+			AutoStart:              a.autoStart.IsEnabled(),
+			NetworkPrintingEnabled: networkEnabled,
+			DebugMode:              debugMode,
+		},
 	}
 }
 
@@ -346,7 +396,62 @@ func (a *App) GetTroubleshootInfo() TroubleshootInfo {
 	}
 }
 
+func (a *App) MarkUpdateSeen(tag string) error {
+	return a.config.SetLastSeenUpdate(tag)
+}
+
+func (a *App) ToggleDebugMode() error {
+	if err := a.config.ToggleDebugMode(); err != nil {
+		return err
+	}
+	logger.SetDebugMode(a.config.IsDebugMode())
+
+	a.notifyAppVariablesChanged()
+	return nil
+}
+
+func (a *App) CheckForUpdate() update.Info {
+	info, err := update.Check(a.ctx)
+	if err != nil {
+		logger.Errorf("Update check failed: %v", err)
+	}
+	info.Seen = a.config.LastSeenUpdate() != "" && a.config.LastSeenUpdate() == info.LatestVersion
+	return info
+}
+
+func (a *App) notifyUpdateProgress(p update.Progress) {
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "update-progress", p)
+	}
+}
+
+func (a *App) DownloadUpdate() (string, error) {
+	staged, err := update.Download(context.Background(), func(p update.Progress) {
+		a.notifyUpdateProgress(p)
+	})
+	if err != nil {
+		logger.Errorf("Failed to download update: %v", err)
+		return "", err
+	}
+
+	a.notifyUpdateProgress(update.Progress{State: update.StateInstalling, Percent: 100})
+	go func() {
+		time.Sleep(5 * time.Second)
+		logger.Debugf("Applying update")
+		if err := a.ApplyUpdate(); err != nil {
+			logger.Errorf("Failed to auto-apply update: %v", err)
+			a.notifyUpdateProgress(update.Progress{State: update.StateFailed, Error: err.Error()})
+		}
+	}()
+
+	return staged, nil
+}
+
 func (a *App) confirmQuit() bool {
+	if a.restart.Load() {
+		return true
+	}
+
 	result, err := a.dialogs.Message(a.ctx, wailsruntime.MessageDialogOptions{
 		Type:          wailsruntime.QuestionDialog,
 		Title:         "Quit Obox App",
@@ -367,4 +472,40 @@ func (a *App) confirmQuit() bool {
 
 	logger.Debug("Confirmed quit action")
 	return true
+}
+
+func (a *App) ApplyUpdate() error {
+	u := update.GetUpdaterInstance()
+	a.restart.Store(true)
+
+	if err := u.Apply(); err != nil {
+		a.restart.Store(false)
+		logger.Errorf("Failed to apply update: %v", err)
+		return err
+	}
+
+	if update.PlatformNeedsQuitAfterApply() {
+		if a.webserver != nil && a.webserver.Running() {
+			_ = a.webserver.Stop()
+		}
+
+		if a.ctx != nil {
+			wailsruntime.Quit(a.ctx)
+		}
+	} else {
+		a.restart.Store(false)
+		a.notifyUpdateProgress(update.Progress{State: update.StateInstalled})
+	}
+
+	return nil
+}
+
+func (a *App) CancelUpdate() {
+	a.restart.Store(false)
+	update.GetUpdaterInstance().Reset()
+	if a.ctx != nil {
+		a.events.Emit(a.ctx, "update-progress", update.Progress{
+			State: update.StateUpdateAvailable,
+		})
+	}
 }

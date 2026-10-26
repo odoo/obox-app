@@ -66,3 +66,18 @@ func TestLoggingWrappers(t *testing.T) {
 	testutil.ExpectedContains(t, buf.String(), "debugf arg")
 	buf.Reset()
 }
+
+func TestDebugMode(t *testing.T) {
+	SetDebugMode(false)
+	testutil.ExpectedFalse(t, IsDebugMode())
+	testutil.ExpectedEqual(t, log.GetLevel(), logrus.InfoLevel)
+
+	// Call again with the same value (false -> false) to test early return
+	SetDebugMode(false)
+	testutil.ExpectedFalse(t, IsDebugMode())
+	testutil.ExpectedEqual(t, log.GetLevel(), logrus.InfoLevel)
+
+	SetDebugMode(true)
+	testutil.ExpectedTrue(t, IsDebugMode())
+	testutil.ExpectedEqual(t, log.GetLevel(), logrus.DebugLevel)
+}

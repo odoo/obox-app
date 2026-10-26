@@ -28,6 +28,7 @@ var printerRegistry = map[string]Type{
 	"2d84:c7c8": TypeReceipt, // Zhuhai Poskey
 	"4b43:3830": TypeReceipt, // Caysn
 	"0483:5720": TypeReceipt, // STMicroelectronics
+	"0fe6:811e": TypeReceipt, // Rugtek
 
 	// Label printers
 	"0a5f:0187": TypeLabel, // Zebra ZD421
