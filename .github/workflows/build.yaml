@@ -20,18 +20,18 @@ jobs:
       fail-fast: false
       matrix:
         build:
-          - name: 'epos-proxy-linux64'
+          - name: 'obox-app-linux64'
             platform:  'linux/amd64'
             os: 'ubuntu-latest'
 
-          - name: 'epos-proxy-win64'
+          - name: 'obox-app-win64'
             platform:  'windows/amd64'
             os: 'windows-latest'
 
           # Disable automatic macOS builds for now as it's better to sign in a local environment
           # with the correct certificates and provisioning profiles.
-          #- name: 'epos-proxy-macos-arm64'
-          #  macos-app-name: 'ePOS proxy'
+          #- name: 'obox-app-macos-arm64'
+          #  macos-app-name: 'Obox App'
           #  platform:  'darwin/arm64'
           #  os: 'macos-latest'
 

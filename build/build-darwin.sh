@@ -15,9 +15,9 @@ usage() {
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
-APP_NAME="ePOS proxy"
-BINARY_NAME="epos-proxy"
-DMG_NAME="epos-proxy-osx-arm64"
+APP_NAME="Obox App"
+BINARY_NAME="obox-app"
+DMG_NAME="obox-app-osx-arm64"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 APPLE_ID=""

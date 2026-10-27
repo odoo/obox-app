@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"epos-proxy/internal/testutil"
+	"obox-app/internal/testutil"
 )
 
 func TestBuildSnapshot(t *testing.T) {

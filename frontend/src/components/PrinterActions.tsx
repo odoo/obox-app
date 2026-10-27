@@ -1,31 +1,19 @@
 import { useContext, useState } from "react";
 import { ToastContext } from "../contexts/ToastContext";
-import { main } from "../../wailsjs/go/models";
+import { printer } from "../../wailsjs/go/models";
 import { errorText } from "../error";
 import { executePrint } from "../functions/executePrint";
+import { useClipboard } from "../hooks/useClipboard";
 
 interface PrinterActionsProps {
-  printer: main.Printer;
+  printer: printer.Device;
 }
 
 export default function PrinterActions({ printer }: PrinterActionsProps) {
   const toastContext = useContext(ToastContext);
-  const [copiedIp, setCopiedIp] = useState(false);
+  const { copy, isCopied } = useClipboard();
   const [isTestPrinting, setIsTestPrinting] = useState(false);
   const [isCashDrawerOpening, setIsCashDrawerOpening] = useState(false);
-
-  async function onCopy() {
-    try {
-      await navigator.clipboard.writeText(printer.ip);
-      setCopiedIp(true);
-      setTimeout(() => setCopiedIp(false), 2000);
-    } catch (err) {
-      toastContext.actions.showToast(
-        `Copy failed: ${errorText(err, "unknown error")}`,
-        "danger",
-      );
-    }
-  }
 
   async function onTest() {
     setIsTestPrinting(true);
@@ -66,20 +54,19 @@ export default function PrinterActions({ printer }: PrinterActionsProps) {
   return (
     <div className="flex gap-2 mt-4 flex-wrap">
       <button
-        onClick={onCopy}
-        className={`flex-1 border text-sm rounded-lg px-3 py-2 cursor-pointer whitespace-nowrap ${
-          copiedIp
+        onClick={() => copy(printer.ip, printer.ip, "Printer IP")}
+        className={`flex-1 border border-transparent text-sm rounded-lg px-3 py-2 cursor-pointer whitespace-nowrap ${isCopied(printer.ip)
             ? "bg-success text-white"
             : "bg-odoo text-white hover:bg-odoo-dark"
-        }`}
+          }`}
       >
-        {copiedIp ? "✓ Copied!" : "Copy IP"}
+        {isCopied(printer.ip) ? "✓ Copied!" : "Copy IP"}
       </button>
 
       <button
         onClick={onTest}
         disabled={isTestPrinting}
-        className="flex-1 border rounded-lg text-sm px-3 py-2 cursor-pointer border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="flex-1 rounded-lg text-sm px-3 py-2 cursor-pointer border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isTestPrinting ? "Printing..." : "Test"}
       </button>
@@ -88,7 +75,7 @@ export default function PrinterActions({ printer }: PrinterActionsProps) {
         <button
           onClick={onCashDrawerOpen}
           disabled={isCashDrawerOpening}
-          className="flex-1 break-keep border rounded-lg text-sm px-3 py-2 cursor-pointer border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex-1 whitespace-nowrap rounded-lg text-sm px-3 py-2 cursor-pointer border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isCashDrawerOpening ? "Opening..." : "Cash Drawer"}
         </button>

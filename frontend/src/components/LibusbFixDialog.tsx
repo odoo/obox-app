@@ -20,6 +20,14 @@ export default function LibusbFixDialog({ printerName }: { printerName: string; 
     return [];
   }, [printerName, appContext.data.os]);
 
+  if (appContext.data.isLoading) {
+    return (
+      <div className="mt-6 flex justify-center">
+        <div className="h-9 w-44 bg-gray-200 rounded-lg animate-pulse" />
+      </div>
+    );
+  }
+
   if (fixSteps.length === 0) {
     return null;
   }
@@ -30,7 +38,7 @@ export default function LibusbFixDialog({ printerName }: { printerName: string; 
       title={title}
       openButton={
         <div className="mt-6 text-center">
-          <div className="flex-1 border bg-odoo text-white hover:bg-odoo-dark rounded-lg px-4 py-2 text-center cursor-pointer mt-2 text-sm font-medium">
+          <div className="border border-transparent bg-odoo text-white hover:bg-odoo-dark rounded-lg px-4 py-2 cursor-pointer mt-2 text-sm font-medium">
             {`Fix - ${title}`}
           </div>
         </div>

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useClipboard } from "../hooks/useClipboard";
 import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
 import type { Step } from "../types";
 import { useStepDialog } from "../hooks/useStepDialog";
@@ -27,7 +28,7 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
   const [displayStep, setDisplayStep] = useState(0);
   const [phase, setPhase] = useState<ContentPhase>("shown");
   const [contentHeight, setContentHeight] = useState("auto");
-  const [codeCopied, setCodeCopied] = useState<Record<number, boolean>>({});
+  const { copy, isCopied } = useClipboard();
   const [scrollingCodes, setScrollingCodes] = useState<Set<number>>(new Set());
   const codeRefs = useRef<(HTMLPreElement | null)[]>([]);
 
@@ -100,15 +101,6 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
     };
   }, [phase]);
 
-  async function copyCode(index: number, code: string) {
-    await navigator.clipboard.writeText(code);
-    setCodeCopied((copied) => ({ ...copied, [index]: true }));
-    setTimeout(
-      () => setCodeCopied((copied) => ({ ...copied, [index]: false })),
-      2000,
-    );
-  }
-
   const step = steps[displayStep];
 
   const handleOpen = () => {
@@ -142,11 +134,22 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
   return (
     <Dialog openButton={openButton} title={dialogTitle} onOpen={handleOpen} actions={dialogActions} showTitleDivider>
       {isLoading ? (
-        <div className="py-8 flex flex-col items-center justify-center text-center gap-2">
-          <div className="w-5 h-5 border-2 border-odoo border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-gray-600 font-medium">
-            Loading guide...
-          </span>
+        <div className="py-2 animate-pulse space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="h-3 bg-gray-200 rounded w-20" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-1.5 rounded-full bg-gray-200" />
+              <div className="w-2.5 h-1.5 rounded-full bg-gray-200" />
+              <div className="w-2.5 h-1.5 rounded-full bg-gray-200" />
+            </div>
+          </div>
+          <div className="h-5 bg-gray-200 rounded w-2/3" />
+          <div className="space-y-2 pt-1">
+            <div className="h-3.5 bg-gray-100 rounded w-full" />
+            <div className="h-3.5 bg-gray-100 rounded w-5/6" />
+            <div className="h-3.5 bg-gray-100 rounded w-4/6" />
+          </div>
+          <div className="h-20 bg-gray-100 rounded-lg w-full mt-3" />
         </div>
       ) : steps.length === 0 ? (
         <div className="py-6 text-center text-gray-600 text-sm">
@@ -222,9 +225,9 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
                   </pre>
                   <button
                     className="absolute top-2.5 right-2 px-2 py-1 text-xs rounded-md bg-slate-700 text-slate-300 hover:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                    onClick={() => copyCode(index, code)}
+                    onClick={() => copy(code, `code-${index}`, "Command")}
                   >
-                    {codeCopied[index] ? "✓ Copied" : "Copy"}
+                    {isCopied(`code-${index}`) ? "✓ Copied" : "Copy"}
                   </button>
                 </div>
               ))}

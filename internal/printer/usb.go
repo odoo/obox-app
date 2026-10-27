@@ -3,7 +3,7 @@ package printer
 import (
 	"fmt"
 
-	"epos-proxy/internal/logger"
+	"obox-app/internal/logger"
 
 	"github.com/google/gousb"
 )

@@ -1,5 +1,4 @@
 import { useContext, useEffect, useMemo, useState } from "react";
-import { PrinterContext } from "../contexts/PrinterContext";
 import StepDialog from "./StepDialog";
 import { GetTroubleshootInfo } from "../../wailsjs/go/main/App";
 import { main } from "../../wailsjs/go/models";
@@ -8,12 +7,11 @@ import type { Step } from "../types";
 import { AppContext } from "../contexts/AppContext";
 
 export default function NetworkPrinting() {
-  const printerContext = useContext(PrinterContext);
   const appContext = useContext(AppContext);
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const [info, setInfo] = useState<main.TroubleshootInfo | null>(null);
 
-  const enabled = printerContext.data.networkPrintingEnabled;
+  const enabled = appContext.data.networkPrintingEnabled;
 
   const fetchInfo = async () => {
     setIsLoadingInfo(true);
@@ -61,7 +59,7 @@ export default function NetworkPrinting() {
         isLoading={isLoadingInfo && !info}
         onOpen={fetchInfo}
         openButton={
-          <span className="text-sm  text-gray-600 hover:text-odoo  underline-offset-2 cursor-pointer transition-colors">
+          <span className="text-sm text-gray-600 hover:text-odoo cursor-pointer transition-colors">
             Having trouble printing?
           </span>
         }
