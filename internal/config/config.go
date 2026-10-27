@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 var ErrNoAvailablePort = errors.New("no available port in range")
@@ -18,6 +19,8 @@ const AppName = "OboxApp"
 const (
 	PortRangeStart = 4545
 	PortRangeEnd   = 4555
+
+	DebugModeDuration = 24 * time.Hour
 )
 
 type AppConfig struct {
@@ -25,7 +28,12 @@ type AppConfig struct {
 	Port            int        `json:"port"`
 	LANPrinters     []string   `json:"lan_printers,omitempty"`
 	NetworkPrinting bool       `json:"network_printing"`
+	AutoStart       bool       `json:"auto_start"`
 	Odoo            OdooConfig `json:"odoo"`
+
+	LastSeenUpdate     string     `json:"last_seen_update,omitempty"`
+	DebugMode          bool       `json:"debug_mode"`
+	DebugModeExpiresAt *time.Time `json:"debug_mode_expires_at,omitempty"`
 }
 
 func defaults() AppConfig {
@@ -35,6 +43,9 @@ func defaults() AppConfig {
 		NetworkPrinting: false,
 		LANPrinters:     []string{},
 		Odoo:            OdooConfig{},
+
+		DebugMode:          false,
+		DebugModeExpiresAt: nil,
 	}
 }
 
@@ -193,4 +204,33 @@ func (cm *Manager) GetLANPrinters() []string {
 	result := make([]string, len(cm.Data.LANPrinters))
 	copy(result, cm.Data.LANPrinters)
 	return result
+}
+
+func (cm *Manager) LastSeenUpdate() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.Data.LastSeenUpdate
+}
+
+func (cm *Manager) SetLastSeenUpdate(tag string) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.Data.LastSeenUpdate = tag
+	return cm.saveLocked()
+}
+
+// IsAutoStartEnabled reports whether "start at login" is currently enabled.
+func (cm *Manager) IsAutoStartEnabled() bool {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.Data.AutoStart
+}
+
+// SetAutoStartEnabled persists the start-at-login preference.
+func (cm *Manager) SetAutoStartEnabled(enabled bool) error {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.Data.AutoStart = enabled
+	return cm.saveLocked()
 }

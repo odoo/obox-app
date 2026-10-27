@@ -17,7 +17,10 @@ usage() {
 # ── Config ────────────────────────────────────────────────────────────────────
 APP_NAME="Obox App"
 BINARY_NAME="obox-app"
-DMG_NAME="obox-app-osx-arm64"
+DMG_NAME="obox-app-darwin-arm64"
+VERSION="${VERSION:-$(git describe --tags 2>/dev/null || echo "dev")}"
+BUILD_TIME="${BUILD_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+COMMIT="${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null)}"
 
 # ── Parse args ────────────────────────────────────────────────────────────────
 APPLE_ID=""
@@ -63,7 +66,7 @@ EOF
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo "▶ Building..."
-wails build -clean
+wails build -clean -ldflags "-X 'obox-app/buildinfo.Version=${VERSION}' -X 'obox-app/buildinfo.BuildTime=${BUILD_TIME}' -X 'obox-app/buildinfo.Commit=${COMMIT}'"
 
 # ── Bundle libusb ─────────────────────────────────────────────────────────────
 echo "▶ Bundling libusb..."

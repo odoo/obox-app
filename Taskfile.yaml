@@ -1,0 +1,168 @@
+version: "3"
+
+vars:
+  APP_NAME: "obox-app"
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  BUILD_TIME:
+    sh: date -u +"%Y-%m-%dT%H:%M:%SZ"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_FLAGS: '-ldflags "-X obox-app/buildinfo.Version={{.VERSION}} -X obox-app/buildinfo.BuildTime={{.BUILD_TIME}} -X obox-app/buildinfo.Commit={{.COMMIT}} -s -w"'
+  BIN_DIR: "build/bin"
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  # ── Development ────────────────────────────────────────────────────────────
+  dev:
+    desc: Run app in development mode with live hot-reloading
+    cmds:
+      - task: generate:bindings
+      - wails3 dev -port 5173
+
+  generate:bindings:
+    desc: Generate TypeScript bindings from Go service methods
+    cmds:
+      - wails3 generate bindings -ts
+
+  lint:
+    desc: Run code formatting and linter checks
+    cmds:
+      - test -z "$(gofmt -s -l .)" || (echo "Unformatted Go files exist. Run 'task lint:fix'" && exit 1)
+      - npm --prefix frontend run typecheck
+      - npm --prefix frontend run lint
+
+  lint:fix:
+    desc: Automatically format Go code and fix frontend lint issues
+    cmds:
+      - gofmt -s -w .
+      - npm --prefix frontend run lint:fix
+
+  test:
+    desc: Run all Go unit and integration tests
+    cmds:
+      - go test -v ./...
+
+  clean:
+    desc: Remove build artifacts and temporary files
+    cmds:
+      - rm -rf {{.BIN_DIR}} bin/ frontend/dist/ coverage.out
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  frontend:install:
+    desc: Install frontend dependencies
+    dir: frontend
+    status:
+      - test -d node_modules
+    cmds:
+      - npm install
+
+  frontend:build:
+    desc: Compile TypeScript and bundle frontend assets
+    dir: frontend
+    deps: [frontend:install]
+    cmds:
+      - npm run build
+
+  # ── CI & Environment Setup ────────────────────────────────────────────────
+  ci:deps:wails:
+    desc: Install Wails v3 CLI tool
+    cmds:
+      - go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+
+  ci:deps:linux:
+    desc: Install Linux system build dependencies (Ubuntu/Debian)
+    cmds:
+      - sudo apt-get update
+      - sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev gcc-aarch64-linux-gnu libusb-1.0-0-dev
+
+  ci:deps:darwin:
+    desc: Install macOS system build dependencies
+    cmds:
+      - brew install libusb
+
+  # ── Production Builds ─────────────────────────────────────────────────────
+  build:
+    desc: Build production binary for current platform
+    deps: [generate:bindings, frontend:build]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}} .
+
+  build:linux:
+    desc: Build Linux binary (amd64)
+    deps: [generate:bindings, frontend:build]
+    vars:
+      TARGET: '{{default "obox-app-linux-amd64" .BUILD_NAME}}'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.TARGET}}-{{.VERSION}} .
+      - chmod +x {{.BIN_DIR}}/{{.TARGET}}-{{.VERSION}}
+      - cp {{.BIN_DIR}}/{{.TARGET}}-{{.VERSION}} {{.BIN_DIR}}/{{.TARGET}}
+
+  build:windows:
+    desc: Build Windows binary and installer (amd64)
+    deps: [generate:bindings, frontend:build]
+    vars:
+      TARGET: '{{default "obox-app-windows-amd64" .BUILD_NAME}}'
+    env:
+      CGO_ENABLED: "1"
+      CGO_CFLAGS: "-I/mingw64/include/libusb-1.0"
+      CGO_LDFLAGS: "-L/mingw64/lib -lusb-1.0 -static -lsetupapi"
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.TARGET}}-{{.VERSION}}.exe .
+      - cp {{.BIN_DIR}}/{{.TARGET}}-{{.VERSION}}.exe {{.BIN_DIR}}/{{.TARGET}}.exe
+      - cmd: makensis -DARG_WAILS_AMD64_BINARY={{.BIN_DIR}}/{{.TARGET}}.exe -DINFO_PRODUCTVERSION={{.VERSION}} build/windows/installer/project.nsi
+        ignore_error: true
+      - cmd: mv build/windows/installer/*-installer.exe {{.BIN_DIR}}/{{.TARGET}}-installer-{{.VERSION}}.exe
+        ignore_error: true
+
+  build:darwin:
+    desc: Build macOS application bundle (universal/arm64)
+    deps: [generate:bindings, frontend:build]
+    vars:
+      TARGET: '{{default "obox-app-darwin-arm64" .BUILD_NAME}}'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - ./build/build-darwin.sh
+
+  # ── Packaging & Release ───────────────────────────────────────────────────
+  package:
+    desc: Package production application for current platform
+    cmds:
+      - '{{if eq OS "windows"}}task build:windows{{else if eq OS "darwin"}}task build:darwin{{else}}task package:deb{{end}}'
+
+  package:deb:
+    desc: Build Linux .deb package using Wails v3 built-in tools
+    deps: [build:linux]
+    vars:
+      TARGET: '{{default "obox-app-linux-amd64" .BUILD_NAME}}'
+    env:
+      VERSION: '{{.VERSION}}'
+      BINARY_PATH: './{{.BIN_DIR}}/{{.TARGET}}'
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - wails3 generate .desktop -name "Obox App" -exec "/usr/bin/{{.APP_NAME}}" -icon "{{.APP_NAME}}" -outputfile "{{.BIN_DIR}}/{{.APP_NAME}}.desktop" -categories "Utility;Office;" -comment "POS Printer Proxy for Odoo"
+      - wails3 tool package -name "{{.APP_NAME}}" -format deb -config build/linux/nfpm/nfpm.yaml -out "{{.BIN_DIR}}"
+      - test "{{.TARGET}}" = "{{.APP_NAME}}" || cp {{.BIN_DIR}}/{{.APP_NAME}}.deb {{.BIN_DIR}}/{{.TARGET}}.deb
+      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}.desktop"
+
+  package:checksums:
+    desc: Generate sha256 checksums file for release assets
+    dir: "{{.BIN_DIR}}"
+    cmds:
+      - rm -f sha256sums
+      - sha256sum * > sha256sums 2>/dev/null || shasum -a 256 * > sha256sums 2>/dev/null || true
+
+  build:ci:
+    desc: Build, package, and generate checksums according to the runner OS
+    vars:
+      TARGET: '{{default "obox-app" .BUILD_NAME}}'
+    cmds:
+      - '{{if eq OS "windows"}}task build:windows BUILD_NAME={{.TARGET}}{{else if eq OS "darwin"}}task build:darwin BUILD_NAME={{.TARGET}}{{else}}task package:deb BUILD_NAME={{.TARGET}}{{end}}'
+      - task: package:checksums

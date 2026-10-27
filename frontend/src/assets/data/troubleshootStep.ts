@@ -1,4 +1,4 @@
-import type { main } from "../../../wailsjs/go/models";
+import type * as main from "@bindings/obox-app/models";
 
 export function getWindowsSteps(info: main.TroubleshootInfo) {
   return [
@@ -18,7 +18,7 @@ export function getMacSteps(info: main.TroubleshootInfo) {
     {
       title: "macOS Application Firewall",
       desc: "macOS may block incoming network access to Obox App through its built-in Application Firewall.\n\nYou can allow it in *System Settings → Privacy & Security → Firewall*, or run this in Terminal:",
-      codes: [`sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "/Applications/Obox App.app"`,],
+      codes: ["sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp \"/Applications/Obox App.app\"",],
     },
     ...networkSteps(info),
   ];
@@ -88,11 +88,11 @@ export function staticIpAdvice(localIp: string) {
   return `To ensure your printer connection never breaks, *reserve a fixed / static IP* for this computer (*${localIp}*) in your router's DHCP settings.\nAfter changing it, restart the app before configuring your POS device.`;
 }
 
-function networkSteps({ localIp, port }: main.TroubleshootInfo) {
+function networkSteps({ localIp }: main.TroubleshootInfo) {
   return [
     {
       title: "Check Network & Wi-Fi Connection",
-      desc: `• *Same Local Wi-Fi:* Ensure your POS device is connected to the same Wi-Fi network (not a Guest network or cellular data).\n\n• *Router Client Isolation:* Check if your Wi-Fi router has "Client Isolation" or "AP Isolation" enabled. This prevents devices from communicating with each other.`,
+      desc: "• *Same Local Wi-Fi:* Ensure your POS device is connected to the same Wi-Fi network (not a Guest network or cellular data).\n\n• *Router Client Isolation:* Check if your Wi-Fi router has \"Client Isolation\" or \"AP Isolation\" enabled. This prevents devices from communicating with each other.",
     },
     {
       title: "Set a Fixed / Static IP",

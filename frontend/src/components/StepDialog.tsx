@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useClipboard } from "../hooks/useClipboard";
-import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+import { openBrowser } from "../lib/wails";
 import type { Step } from "../types";
 import { useStepDialog } from "../hooks/useStepDialog";
 import { renderFormattedText } from "../functions/renderFormattedText";
@@ -116,9 +116,9 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
       return [];
     }
 
-    const nextAction: DialogAction = { name: "next", label: "Next", variant: "primary", onClick: () => { next(steps.length); return false; } }
+    const nextAction: DialogAction = { name: "next", label: "Next", variant: "primary", onClick: () => { next(steps.length); return false; } };
     const done: DialogAction = { name: "done", label: "Done", variant: "primary", onClick: () => { setCurrentStep(0); return true; }, };
-    const backAction: DialogAction = { name: "back", label: "Back", variant: "secondary", onClick: () => { back(); return false; } }
+    const backAction: DialogAction = { name: "back", label: "Back", variant: "secondary", onClick: () => { back(); return false; } };
 
     if (currentStep === 0) {
       return [nextAction];
@@ -160,7 +160,7 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
                       : i < displayStep
                         ? "w-2.5 bg-odoo/40"
                         : "w-2.5 bg-stone-200"
-                      }`}
+                    }`}
                   />
                 ))}
               </div>
@@ -186,7 +186,7 @@ export default function StepDialog({ steps, openButton, title, isLoading, onOpen
                   rel="noreferrer"
                   onClick={(event) => {
                     event.preventDefault();
-                    BrowserOpenURL(step.link!);
+                    openBrowser(step.link!);
                   }}
                   className="inline-flex items-center mt-3 px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400 text-sm transition font-medium"
                 >

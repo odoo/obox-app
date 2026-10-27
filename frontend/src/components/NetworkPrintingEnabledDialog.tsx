@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import { GetTroubleshootInfo } from "../../wailsjs/go/main/App";
+import { GetTroubleshootInfo } from "@bindings/obox-app/app";
 import { staticIpAdvice } from "../assets/data/troubleshootStep";
 import { AppContext } from "../contexts/AppContext";
 import { renderFormattedText } from "../functions/renderFormattedText";
@@ -10,7 +10,7 @@ export default function NetworkPrintingEnabledDialog() {
   const [localIp, setLocalIp] = useState<string | null>(null);
   const isInitialMount = useRef(true);
   const appContext = useContext(AppContext);
-  const { networkPrintingEnabled, isLoading } = appContext.data;
+  const { settings: { networkPrintingEnabled }, isLoading } = appContext.data;
   const prevEnabled = useRef(networkPrintingEnabled);
 
   useEffect(() => {

@@ -13,85 +13,118 @@ package main
 
 import (
 	"C"
-	"context"
 	"embed"
 	"os"
+	"runtime"
 
 	"obox-app/internal/logger"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed build/appicon.png
+var appIcon []byte
+
+func init() {
+	if runtime.GOOS == "linux" && os.Getenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS") == "" {
+		_ = os.Setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
+	}
+}
+
 func main() {
 	logger.InitLogger()
 	logger.Debugf("Starting Obox App")
 
-	app := NewApp()
+	oboxApp := NewApp()
+	notificationService := notifications.New()
+	oboxApp.setNotifications(notificationService)
 
-	windowStartState := options.Normal
-	for _, arg := range os.Args[1:] {
-		if arg == "--minimized" {
-			logger.Debugf("Application started with --minimized flag")
-			windowStartState = options.Minimised
-			break
-		}
-	}
+	var app *application.App
 
-	err := wails.Run(&options.App{
-		Title:                    "",
-		Width:                    800,
-		Height:                   600,
-		MinWidth:                 700,
-		MinHeight:                500,
-		EnableDefaultContextMenu: true,
-		WindowStartState:         windowStartState,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	app = application.New(application.Options{
+		Name:        "Obox App",
+		Description: "POS Printer Proxy for Odoo",
+		Icon:        appIcon,
+		Services: []application.Service{
+			application.NewService(oboxApp),
+			application.NewService(notificationService),
 		},
-		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "obox-app-single-instance",
-			OnSecondInstanceLaunch: func(secondInstanceData options.SecondInstanceData) {
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Mac: application.MacOptions{
+			// Keep the app alive in the dock/menu bar when the window is closed.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+		},
+		// Single-instance lock: if a second instance is launched, focus the first.
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "obox-app-single-instance",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				logger.Warn("Second instance detected, focusing existing window")
-				wailsruntime.WindowShow(app.ctx)
-				wailsruntime.WindowUnminimise(app.ctx)
+				if app != nil {
+					if win, ok := app.Window.GetByName("main"); ok {
+						win.Show()
+						win.Focus()
+					}
+				}
 			},
 		},
-		OnBeforeClose: func(ctx context.Context) (prevent bool) {
-			if app.confirmQuit() {
-				logger.Infof("User confirmed quit")
-				return false
-			}
-
-			logger.Infof("Close requested, minimizing window instead of quitting")
-			wailsruntime.WindowMinimise(ctx)
-			return true
-		},
-		BackgroundColour: &options.RGBA{R: 255, G: 255, B: 255, A: 1},
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
-		Bind: []interface{}{
-			app,
-		},
-		Windows: &windows.Options{
-			DisableWindowIcon: true,
-		},
-		Mac: &mac.Options{
-			TitleBar: mac.TitleBarHiddenInset(),
-		},
-		Linux: &linux.Options{},
 	})
 
-	if err != nil {
+	// Give the service a reference to the app so it can emit events, show
+	// dialogs, and manipulate windows.
+	oboxApp.setApp(app)
+
+	// ── Main window ────────────────────────────────────────────────────────
+	// Application starts in the system tray only. The window stays hidden in the
+	// background until the user clicks the tray icon or chooses 'Show Obox App'.
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:      "main",
+		Title:     "Obox App",
+		Width:     800,
+		Height:    600,
+		MinWidth:  700,
+		MinHeight: 500,
+		Hidden:    true,
+		Mac: application.MacWindow{
+			InvisibleTitleBarHeight: 50,
+			Backdrop:                application.MacBackdropTranslucent,
+			TitleBar:                application.MacTitleBarHiddenInset,
+		},
+	})
+
+	// Intercept window close: stay running in background as system tray (hidden, not minimized)
+	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if oboxApp.restart.Load() {
+			return
+		}
+		e.Cancel()
+		window.Hide()
+	})
+
+	oboxApp.setWindow(window)
+
+	// ── Startup hook ───────────────────────────────────────────────────────
+	// ApplicationStarted fires once the event loop is running and all
+	// services/windows are initialised — safe to start background services.
+	app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(_ *application.ApplicationEvent) {
+		oboxApp.startup()
+	})
+
+	app.OnShutdown(func() {
+		oboxApp.shutdown()
+	})
+
+	// ── System tray ────────────────────────────────────────────────────────
+	setupSystemTray(app, window, oboxApp)
+
+	// ── Run ────────────────────────────────────────────────────────────────
+	if err := app.Run(); err != nil {
 		logger.Errorf("Application crashed: %v", err)
 	}
-
 }

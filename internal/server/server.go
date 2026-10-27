@@ -21,7 +21,7 @@ type Server struct {
 }
 
 func New(port int, printerMgr *printer.Manager, obox *obox.Manager) *Server {
-	app := fiber.New(fiber.Config{AppName: "Obox app"})
+	app := fiber.New(fiber.Config{AppName: "Obox App"})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:        []string{"*"},
 		AllowPrivateNetwork: true,

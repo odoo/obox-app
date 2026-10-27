@@ -1,6 +1,6 @@
 import { useContext, useState } from "react";
 import { ToastContext } from "../contexts/ToastContext";
-import { printer } from "../../wailsjs/go/models";
+import * as printer from "@bindings/obox-app/internal/printer/models";
 import { errorText } from "../error";
 import { executePrint } from "../functions/executePrint";
 import { useClipboard } from "../hooks/useClipboard";
@@ -56,9 +56,9 @@ export default function PrinterActions({ printer }: PrinterActionsProps) {
       <button
         onClick={() => copy(printer.ip, printer.ip, "Printer IP")}
         className={`flex-1 border border-transparent text-sm rounded-lg px-3 py-2 cursor-pointer whitespace-nowrap ${isCopied(printer.ip)
-            ? "bg-success text-white"
-            : "bg-odoo text-white hover:bg-odoo-dark"
-          }`}
+          ? "bg-success text-white"
+          : "bg-odoo text-white hover:bg-odoo-dark"
+        }`}
       >
         {isCopied(printer.ip) ? "✓ Copied!" : "Copy IP"}
       </button>

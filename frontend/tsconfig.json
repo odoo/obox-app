@@ -15,6 +15,7 @@
     "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"],
+      "@bindings/*": ["./bindings/*"],
       "@build/*": ["../build/*"]
     },
     "noImplicitAny": true,
@@ -24,7 +25,7 @@
     "allowJs": true,
   },
   "exclude": ["node_modules", "**/*.spec.ts"],
-  "include": ["src/**/*", "wailsjs/**/*.ts"],
+  "include": ["src/**/*", "bindings/**/*.ts"],
   "references": [
     {
       "path": "./tsconfig.node.json"

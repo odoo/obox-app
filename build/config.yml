@@ -1,0 +1,41 @@
+# This file contains the configuration for this project.
+# When you update `info` or `fileAssociations`, run `wails3 task common:update:build-assets` to update the assets.
+version: '3'
+
+# This information is used to generate the build assets.
+info:
+  companyName: "Odoo"
+  productName: "Obox App"
+  productIdentifier: "com.odoo.oboxapp"
+  description: "POS Printer Proxy for Odoo"
+  copyright: "(c) 2026, Odoo"
+  comments: "POS Printer Proxy"
+  version: "0.1.0"
+
+# Dev mode configuration
+dev_mode:
+  root_path: .
+  log_level: info
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+      - "*_test.go"
+    watched_extension:
+      - "*.go"
+    git_ignore: true
+  executes:
+    - cmd: wails3 generate bindings -ts
+      type: blocking
+    - cmd: npm --prefix frontend run dev
+      type: background
+    - cmd: go run .
+      type: primary
+      exit_policy: shutdown

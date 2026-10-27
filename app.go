@@ -5,116 +5,165 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
+	"obox-app/buildinfo"
 	"obox-app/internal/app_actions"
 	"obox-app/internal/config"
 	"obox-app/internal/logger"
 	"obox-app/internal/obox"
 	"obox-app/internal/printer"
 	"obox-app/internal/server"
+	"obox-app/internal/update"
 	"obox-app/internal/util"
 
-	autostart "github.com/emersion/go-autostart"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
-// dialoger abstracts the Wails runtime dialog calls. Production code uses
-// runtimeDialogs; tests substitute a fake so the dialog-driven code paths can
-// be exercised without a live Wails context.
+// dialoger abstracts UI dialogs for testing and decoupling.
 type dialoger interface {
-	Message(ctx context.Context, opts wailsruntime.MessageDialogOptions) (string, error)
-	SaveFile(ctx context.Context, opts wailsruntime.SaveDialogOptions) (string, error)
+	Error(title, message string)
+	Question(title, message, confirmLabel, cancelLabel string) bool
+	SaveFile(title, filename, filterDisplayName, filterPattern string) (string, error)
 }
 
-// runtimeDialogs forwards to the real Wails runtime.
-type runtimeDialogs struct{}
-
-func (runtimeDialogs) Message(ctx context.Context, opts wailsruntime.MessageDialogOptions) (string, error) {
-	return wailsruntime.MessageDialog(ctx, opts)
-}
-
-func (runtimeDialogs) SaveFile(ctx context.Context, opts wailsruntime.SaveDialogOptions) (string, error) {
-	return wailsruntime.SaveFileDialog(ctx, opts)
-}
-
-// emitter abstracts Wails runtime event emissions. Production code uses
-// runtimeEvents; tests substitute a fake so event-driven code paths can
-// be exercised without a live Wails context.
+// emitter abstracts Wails event broadcasting.
 type emitter interface {
-	Emit(ctx context.Context, eventName string, optionalData ...interface{})
+	Emit(name string, data ...any) bool
 }
 
-// runtimeEvents forwards to the real Wails runtime.
-type runtimeEvents struct{}
+// wailsDialogs implements dialoger using the Wails v3 Dialog manager.
+type wailsDialogs struct {
+	app *application.App
+}
 
-func (runtimeEvents) Emit(ctx context.Context, eventName string, optionalData ...interface{}) {
-	if ctx == nil {
+func (w *wailsDialogs) Error(title, message string) {
+	if w.app == nil || w.app.Dialog == nil {
+		logger.Errorf("Error dialog [no app]: %s — %s", title, message)
 		return
 	}
-	wailsruntime.EventsEmit(ctx, eventName, optionalData...)
+	w.app.Dialog.Error().SetTitle(title).SetMessage(message).Show()
 }
 
-// App struct
-type App struct {
-	ctx            context.Context
-	webserver      *server.Server
-	config         *config.Manager
-	printerManager *printer.Manager
-	obox           *obox.Manager
-	autoStart      *autostart.App
-	dialogs        dialoger
-	events         emitter
-}
+func (w *wailsDialogs) Question(title, message, confirmLabel, cancelLabel string) bool {
+	if w.app == nil || w.app.Dialog == nil {
+		return true
+	}
+	ch := make(chan bool, 1)
+	dialog := w.app.Dialog.Question().
+		SetTitle(title).
+		SetMessage(message)
 
-// showError surfaces an error to the user and logs any failure to do so.
-func (a *App) showError(title, message string) {
-	if _, err := a.dialogs.Message(a.ctx, wailsruntime.MessageDialogOptions{
-		Type:    wailsruntime.ErrorDialog,
-		Title:   title,
-		Message: message,
-	}); err != nil {
-		logger.Errorf("Failed to show error dialog %q: %v", title, err)
+	dialog.AddButton(cancelLabel).SetAsCancel().OnClick(func() {
+		ch <- false
+	})
+	dialog.AddButton(confirmLabel).SetAsDefault().OnClick(func() {
+		ch <- true
+	})
+	dialog.Show()
+
+	select {
+	case confirmed := <-ch:
+		return confirmed
+	case <-time.After(5 * time.Minute):
+		return false
 	}
 }
 
-type AppVariable struct {
-	AppID                  string `json:"appId"`
-	IPAddress              string `json:"ipAddress"`
-	ServerRunning          bool   `json:"serverRunning"`
-	OS                     string `json:"os"`
-	NetworkPrintingEnabled bool   `json:"networkPrintingEnabled"`
-	AutoStart              bool   `json:"autoStart"`
+func (w *wailsDialogs) SaveFile(title, filename, filterDisplayName, filterPattern string) (string, error) {
+	if w.app == nil || w.app.Dialog == nil {
+		return "", nil
+	}
+	dlg := w.app.Dialog.SaveFileWithOptions(&application.SaveFileDialogOptions{
+		Title:    title,
+		Filename: filename,
+	})
+	if filterDisplayName != "" && filterPattern != "" {
+		dlg.AddFilter(filterDisplayName, filterPattern)
+	}
+	return dlg.PromptForSingleSelection()
 }
+
+// wailsEvents implements emitter using Wails v3 Event manager.
+type wailsEvents struct {
+	app *application.App
+}
+
+func (w *wailsEvents) Emit(name string, data ...any) bool {
+	if w.app == nil || w.app.Event == nil {
+		return false
+	}
+	return w.app.Event.Emit(name, data...)
+}
+
+// App is the Wails service that exposes all backend methods to the frontend.
+// In Wails v3, public methods on a service struct are automatically bound.
+type App struct {
+	app                 *application.App
+	window              *application.WebviewWindow
+	notificationService *notifications.NotificationService
+	dialogs             dialoger
+	events              emitter
+	webserver           *server.Server
+	config              *config.Manager
+	printerManager      *printer.Manager
+	oboxMgr             *obox.Manager
+	restart             atomic.Bool
+
+	// trayStatusItem is the dynamic "Odoo: …" menu item in the system tray.
+	trayStatusItem *application.MenuItem
+}
+
+// ── Internal setup ─────────────────────────────────────────────────────────
 
 func NewApp() *App {
 	a := &App{
-		dialogs: runtimeDialogs{},
-		events:  runtimeEvents{},
-	}
-
-	a.autoStart = &autostart.App{
-		Name:        "obox-app",
-		DisplayName: "Obox App",
-		Exec:        []string{os.Args[0]},
+		dialogs: &wailsDialogs{},
+		events:  &wailsEvents{},
 	}
 
 	cfg, err := config.NewManager()
 	if err != nil {
 		logger.Fatalf("Config initialization failed: %v", err)
 	}
-
 	if err := cfg.Load(); err != nil {
 		logger.Warnf("Config load warning: %v", err)
 	}
 	logger.Debugf("Config loaded from %s", cfg.Path())
 	a.config = cfg
+	logger.SetDebugMode(cfg.IsDebugMode())
 
 	return a
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+// setApp is called from main.go after application.New() to give the service
+// a handle to the application (for events, dialogs, etc.).
+func (a *App) setApp(app *application.App) {
+	a.app = app
+	a.dialogs = &wailsDialogs{app: app}
+	a.events = &wailsEvents{app: app}
+}
+
+// setWindow is called from main.go after window creation.
+func (a *App) setWindow(w *application.WebviewWindow) {
+	a.window = w
+}
+
+// setNotifications connects the notification service to App.
+func (a *App) setNotifications(ns *notifications.NotificationService) {
+	a.notificationService = ns
+}
+
+// setTrayStatusItem stores the reference to the dynamic tray status menu item.
+func (a *App) setTrayStatusItem(item *application.MenuItem) {
+	a.trayStatusItem = item
+}
+
+// startup is invoked once the application event loop is running (hooked via
+// OnApplicationEvent in main.go).
+func (a *App) startup() {
 	logger.Debugf("Application startup")
 
 	port, err := a.config.ResolvePort()
@@ -123,38 +172,133 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.printerManager = printer.NewManager(a.config)
-	a.obox = obox.NewManager(port, a.config, app_actions.OboxActionHandler(a.printerManager))
-	a.webserver = server.New(port, a.printerManager, a.obox)
-	a.obox.SetOnStatusChange(func(status obox.ConnectionStatus) {
-		a.events.Emit(a.ctx, "odoo:status_changed", status)
+	a.oboxMgr = obox.NewManager(port, a.config, app_actions.OboxActionHandler(a.printerManager))
+	a.webserver = server.New(port, a.printerManager, a.oboxMgr)
+
+	a.oboxMgr.SetOnStatusChange(func(status obox.ConnectionStatus) {
+		if a.events != nil {
+			a.events.Emit("odoo:status_changed", status)
+		}
+		a.updateTrayStatus(status)
 	})
 }
 
-func (a *App) shutdown(ctx context.Context) {
-	logger.Infof("Stopping Obox App server")
+// shutdown cleanly stops the backend servers on app exit.
+func (a *App) shutdown() {
+	logger.Infof("Application shutdown")
+	if a.oboxMgr != nil {
+		a.oboxMgr.Stop()
+	}
+	if a.webserver != nil && a.webserver.Running() {
+		_ = a.webserver.Stop()
+	}
+}
 
-	if a.obox != nil {
-		a.obox.Stop()
+// updateTrayStatus updates the dynamic status item label in the system tray.
+func (a *App) updateTrayStatus(status obox.ConnectionStatus) {
+	if a.trayStatusItem == nil {
+		return
+	}
+	label := "Odoo: disconnected"
+	if status.WebsocketStatus == obox.StateConnected || status.LanStatus == obox.StateConnected {
+		label = "Odoo: connected ✓"
+	} else if status.WebsocketStatus == obox.StateConnecting || status.LanStatus == obox.StateConnecting {
+		label = "Odoo: connecting…"
+	}
+	a.trayStatusItem.SetLabel(label)
+}
+
+// showError shows a native error dialog.
+func (a *App) showError(title, message string) {
+	if a.dialogs != nil {
+		a.dialogs.Error(title, message)
+	}
+}
+
+// ── Exported types (mirrored to frontend via wails3 generate bindings) ─────
+
+type ServerInfo struct {
+	IPAddress string `json:"ipAddress"`
+	Port      int    `json:"port"`
+	Running   bool   `json:"running"`
+}
+
+type SystemInfo struct {
+	OS       string `json:"os"`
+	Arch     string `json:"arch"`
+	Hostname string `json:"hostname"`
+}
+
+type BuildInfo struct {
+	Version   string `json:"version"`
+	BuildTime string `json:"buildTime"`
+	Commit    string `json:"commit"`
+	Dev       bool   `json:"dev"`
+}
+
+type Settings struct {
+	AutoStart              bool `json:"autoStart"`
+	NetworkPrintingEnabled bool `json:"networkPrintingEnabled"`
+	DebugMode              bool `json:"debugMode"`
+}
+
+type AppVariable struct {
+	AppID    string     `json:"appId"`
+	Server   ServerInfo `json:"server"`
+	System   SystemInfo `json:"system"`
+	Build    BuildInfo  `json:"build"`
+	Settings Settings   `json:"settings"`
+}
+
+// ── Public service methods (auto-bound by Wails v3) ────────────────────────
+
+func (a *App) AppVariable() AppVariable {
+	debugMode := a.config.IsDebugMode()
+	logger.SetDebugMode(debugMode)
+	networkEnabled := a.config.IsNetworkPrintingEnabled()
+	hostname, _ := os.Hostname()
+
+	serverInfo := ServerInfo{}
+	if a.webserver != nil {
+		serverInfo = ServerInfo{
+			IPAddress: util.LocalAddr(a.webserver.Port, networkEnabled),
+			Port:      a.webserver.Port,
+			Running:   a.webserver.Running(),
+		}
 	}
 
-	if err := a.webserver.Stop(); err != nil {
-		logger.Errorf("Server stop error: %v", err)
+	autoStart := a.config.IsAutoStartEnabled()
+	if a.app != nil && a.app.Autostart != nil {
+		if enabled, err := a.app.Autostart.IsEnabled(); err == nil {
+			autoStart = enabled
+		}
+	}
+
+	return AppVariable{
+		AppID:  a.config.GetAppID(),
+		Server: serverInfo,
+		System: SystemInfo{
+			OS:       runtime.GOOS,
+			Arch:     runtime.GOARCH,
+			Hostname: hostname,
+		},
+		Build: BuildInfo{
+			Version:   buildinfo.Version,
+			BuildTime: buildinfo.BuildTime,
+			Commit:    buildinfo.Commit,
+			Dev:       buildinfo.Version == "dev",
+		},
+		Settings: Settings{
+			AutoStart:              autoStart,
+			NetworkPrintingEnabled: networkEnabled,
+			DebugMode:              debugMode,
+		},
 	}
 }
 
 func (a *App) notifyAppVariablesChanged() {
-	a.events.Emit(a.ctx, "app:variables_changed", a.AppVariable())
-}
-
-func (a *App) AppVariable() AppVariable {
-	networkEnabled := a.config.IsNetworkPrintingEnabled()
-	return AppVariable{
-		AppID:                  a.config.GetAppID(),
-		IPAddress:              util.LocalAddr(a.webserver.Port, networkEnabled),
-		OS:                     runtime.GOOS,
-		ServerRunning:          a.webserver.Running(),
-		AutoStart:              a.autoStart.IsEnabled(),
-		NetworkPrintingEnabled: networkEnabled,
+	if a.events != nil {
+		a.events.Emit("app:variables_changed", a.AppVariable())
 	}
 }
 
@@ -162,52 +306,45 @@ func (a *App) Printers() printer.DiscoveryResult {
 	logger.Debug("Collecting printer status")
 	result := a.printerManager.DiscoverAllPrinters()
 	for i := range result.Printers {
-		result.Printers[i].Ip = util.GetPrinterUrl(a.webserver.Port, a.config.IsNetworkPrintingEnabled(), result.Printers[i].Id)
+		port := 0
+		if a.webserver != nil {
+			port = a.webserver.Port
+		}
+		result.Printers[i].Ip = util.GetPrinterUrl(port, a.config.IsNetworkPrintingEnabled(), result.Printers[i].Id)
 	}
 	return result
 }
 
 func (a *App) AddLANPrinter(ip string) error {
 	logger.Debugf("Adding LAN printer: %s", ip)
-
 	ip, err := printer.ValidateIPAddress(ip)
 	if err != nil {
 		return fmt.Errorf("invalid IP address: %s, error: %v", ip, err)
 	}
-
 	if err := printer.CheckLANPrinter(ip); err != nil {
 		return fmt.Errorf("LAN printer unreachable: %s, error: %v", ip, err)
 	}
-
 	if err := a.config.AddLanEposPrinter(ip); err != nil {
 		return fmt.Errorf("failed to save LAN printer: %s, error: %v", ip, err)
 	}
-
 	logger.Debugf("LAN printer added successfully: %s", ip)
 	return nil
 }
 
 func (a *App) ConfirmRemoveLANPrinter(ip string) (bool, error) {
 	logger.Debugf("Remove LAN printer requested: %s", ip)
-
-	result, err := a.dialogs.Message(a.ctx, wailsruntime.MessageDialogOptions{
-		Type:          wailsruntime.QuestionDialog,
-		Title:         "Remove Printer",
-		Message:       fmt.Sprintf("Are you sure you want to remove the printer at %s?", ip),
-		Buttons:       []string{"Cancel", "Confirm"},
-		DefaultButton: "Cancel",
-		CancelButton:  "Cancel",
-	})
-	if err != nil {
-		return false, fmt.Errorf("failed to show confirmation dialog: %w", err)
+	msg := fmt.Sprintf("Are you sure you want to remove the printer at %s?", ip)
+	confirmed := false
+	if a.dialogs != nil {
+		confirmed = a.dialogs.Question("Remove Printer", msg, "Confirm", "Cancel")
 	}
-	if result == "Confirm" || result == "Yes" {
+	if confirmed {
 		if err := a.config.RemoveLANPrinter(ip); err != nil {
 			return false, fmt.Errorf("failed to remove LAN printer: %w", err)
 		}
 		return true, nil
 	}
-	logger.Infof("Remove LAN printer cancelled, Remove printer dialog result: %s", result)
+	logger.Infof("Remove LAN printer cancelled: %s", ip)
 	return false, nil
 }
 
@@ -220,29 +357,19 @@ func (a *App) DownloadLogs() {
 	logger.Debugf("Download logs requested")
 	logDir := logger.LogDirectory()
 	zipName := fmt.Sprintf("obox-app-logs-%s-%s.zip", a.config.GetAppID(), time.Now().Format("2006-01-02"))
-	logger.Debugf("Creating logs archive: %s", zipName)
-	savePath, err := a.dialogs.SaveFile(a.ctx, wailsruntime.SaveDialogOptions{
-		Title:           "Save Archive",
-		DefaultFilename: zipName,
-		Filters: []wailsruntime.FileFilter{
-			{
-				DisplayName: "Zip Archives (*.zip)",
-				Pattern:     "*.zip",
-			},
-		},
-	})
+	if a.dialogs == nil {
+		return
+	}
+	savePath, err := a.dialogs.SaveFile("Save Archive", zipName, "Zip Archives (*.zip)", "*.zip")
 	if err != nil {
 		logger.Errorf("Save dialog failed: %v", err)
 		a.showError("Download Logs Failed", err.Error())
 		return
 	}
-
-	// An empty path means the user dismissed the save dialog.
 	if savePath == "" {
 		logger.Infof("Download logs cancelled by user")
 		return
 	}
-
 	if err := util.ZipLogs(logDir, savePath); err != nil {
 		logger.Errorf("Log export failed: %v", err)
 		a.showError("Download Logs Failed", err.Error())
@@ -251,34 +378,44 @@ func (a *App) DownloadLogs() {
 	logger.Infof("Logs successfully exported to: %s", savePath)
 }
 
+// ToggleAutoStart toggles start-at-login using the Wails v3 built-in mechanism.
 func (a *App) ToggleAutoStart() error {
 	logger.Info("Toggling autostart")
-
-	if a.autoStart.IsEnabled() {
-		if err := a.autoStart.Disable(); err != nil {
-			return err
+	if a.app != nil && a.app.Autostart != nil {
+		enabled, err := a.app.Autostart.IsEnabled()
+		if err != nil {
+			logger.Warnf("Could not check autostart status, falling back to config: %v", err)
+			enabled = a.config.IsAutoStartEnabled()
 		}
-	} else if runtime.GOOS == "linux" {
-		if err := util.EnableLinuxAutostart(); err != nil {
+		var targetErr error
+		if enabled {
+			targetErr = a.app.Autostart.Disable()
+		} else {
+			targetErr = a.app.Autostart.Enable()
+		}
+		if targetErr != nil {
+			logger.Errorf("Failed to toggle start at login: %v", targetErr)
+			return targetErr
+		}
+		if err := a.config.SetAutoStartEnabled(!enabled); err != nil {
+			logger.Errorf("Failed to persist autostart setting: %v", err)
 			return err
 		}
 	} else {
-		if err := a.autoStart.Enable(); err != nil {
+		current := a.config.IsAutoStartEnabled()
+		if err := a.config.SetAutoStartEnabled(!current); err != nil {
 			return err
 		}
 	}
-
 	a.notifyAppVariablesChanged()
 	return nil
 }
 
 func (a *App) CheckOdooStatus() obox.ConnectionStatus {
 	logger.Debugf("checking Odoo status")
-
-	if a.obox != nil {
-		return a.obox.ConnectionStatus()
+	if a.oboxMgr != nil {
+		return a.oboxMgr.ConnectionStatus()
 	}
-
 	return obox.ConnectionStatus{
 		WebsocketStatus: obox.StateDisconnected,
 		LanStatus:       obox.StateDisconnected,
@@ -287,30 +424,22 @@ func (a *App) CheckOdooStatus() obox.ConnectionStatus {
 
 func (a *App) ConfirmDisconnectOdoo() (bool, error) {
 	logger.Debugf("Confirm Disconnect Odoo requested")
-
-	if a.obox == nil {
+	if a.oboxMgr == nil {
 		return false, fmt.Errorf("Odoo connection is not initialized")
 	}
-
-	result, err := a.dialogs.Message(a.ctx, wailsruntime.MessageDialogOptions{
-		Type:          wailsruntime.QuestionDialog,
-		Title:         "Disconnect Odoo",
-		Message:       "Are you sure you want to disconnect and remove the Odoo database connection?",
-		Buttons:       []string{"Cancel", "Disconnect"},
-		DefaultButton: "Cancel",
-		CancelButton:  "Cancel",
-	})
-	if err != nil {
-		return false, fmt.Errorf("failed to show confirmation dialog: %w", err)
+	confirmed := false
+	if a.dialogs != nil {
+		confirmed = a.dialogs.Question(
+			"Disconnect Odoo",
+			"Are you sure you want to disconnect and remove the Odoo database connection?",
+			"Disconnect",
+			"Cancel",
+		)
 	}
-
-	// In Windows & Linux, the Button field is not ovverride by Button struct
-	// so even here we used "Cancel", "Confirm" it shows {No, Yes}
-	if result != "Disconnect" && result != "Confirm" && result != "Yes" {
+	if !confirmed {
 		return false, nil
 	}
-
-	a.obox.Disconnect()
+	a.oboxMgr.Disconnect()
 	return true, nil
 }
 
@@ -346,25 +475,136 @@ func (a *App) GetTroubleshootInfo() TroubleshootInfo {
 	}
 }
 
-func (a *App) confirmQuit() bool {
-	result, err := a.dialogs.Message(a.ctx, wailsruntime.MessageDialogOptions{
-		Type:          wailsruntime.QuestionDialog,
-		Title:         "Quit Obox App",
-		Message:       "Stopping the Obox App will prevent POS from printing receipts.\n\nAre you sure you want to quit?",
-		Buttons:       []string{"Cancel", "Quit"},
-		DefaultButton: "Cancel",
-	})
+func (a *App) MarkUpdateSeen(tag string) error {
+	return a.config.SetLastSeenUpdate(tag)
+}
 
+func (a *App) ToggleDebugMode() error {
+	if err := a.config.ToggleDebugMode(); err != nil {
+		return err
+	}
+	logger.SetDebugMode(a.config.IsDebugMode())
+	a.notifyAppVariablesChanged()
+	return nil
+}
+
+func (a *App) CheckForUpdate() update.Info {
+	info, err := update.Check(context.Background())
 	if err != nil {
-		logger.Errorf("Failed to show quit dialog: %v", err)
-		return false
+		logger.Errorf("Update check failed: %v", err)
+	}
+	info.Seen = a.config.LastSeenUpdate() != "" && a.config.LastSeenUpdate() == info.LatestVersion
+	if !info.Seen && info.State == update.StateUpdateAvailable {
+		a.sendUpdateNotification(info.LatestVersion)
+	}
+	return info
+}
+
+// sendUpdateNotification fires an OS notification when a new version is found.
+func (a *App) sendUpdateNotification(version string) {
+	if a.notificationService != nil {
+		_ = a.notificationService.SendNotification(notifications.NotificationOptions{
+			ID:    "obox-update",
+			Title: "Update Available",
+			Body:  fmt.Sprintf("Obox App %s is ready to install.", version),
+		})
+	}
+}
+
+func (a *App) notifyUpdateProgress(p update.Progress) {
+	if a.events != nil {
+		a.events.Emit("update-progress", p)
+	}
+}
+
+func (a *App) DownloadUpdate() (string, error) {
+	staged, err := update.Download(context.Background(), func(p update.Progress) {
+		a.notifyUpdateProgress(p)
+	})
+	if err != nil {
+		logger.Errorf("Failed to download update: %v", err)
+		return "", err
 	}
 
-	// linux doesn't use Buttons overrides and uses No | Yes for question dialog
-	if result != "Yes" && result != "Quit" {
+	a.notifyUpdateProgress(update.Progress{State: update.StateInstalling, Percent: 100})
+	go func() {
+		time.Sleep(5 * time.Second)
+		logger.Debugf("Applying update")
+		if err := a.ApplyUpdate(); err != nil {
+			logger.Errorf("Failed to auto-apply update: %v", err)
+			a.notifyUpdateProgress(update.Progress{State: update.StateFailed, Error: err.Error()})
+		}
+	}()
+
+	return staged, nil
+}
+
+func (a *App) confirmQuit() bool {
+	if a.restart.Load() {
+		return true
+	}
+	msg := "Stopping the proxy will prevent POS from printing receipts.\n\nAre you sure you want to quit?"
+	if a.dialogs != nil && !a.dialogs.Question("Quit Obox App", msg, "Quit", "Cancel") {
 		return false
 	}
-
 	logger.Debug("Confirmed quit action")
 	return true
+}
+
+func (a *App) ApplyUpdate() error {
+	u := update.GetUpdaterInstance()
+	a.restart.Store(true)
+
+	if err := u.Apply(); err != nil {
+		a.restart.Store(false)
+		logger.Errorf("Failed to apply update: %v", err)
+		return err
+	}
+
+	if update.PlatformNeedsQuitAfterApply() {
+		if a.webserver != nil && a.webserver.Running() {
+			_ = a.webserver.Stop()
+		}
+
+		if a.app != nil {
+			a.app.Quit()
+		}
+	} else {
+		a.restart.Store(false)
+		a.notifyUpdateProgress(update.Progress{State: update.StateInstalled})
+		if a.notificationService != nil {
+			_ = a.notificationService.SendNotification(notifications.NotificationOptions{
+				ID:    "obox-update-installed",
+				Title: "Update Installed",
+				Body:  "Obox App has been updated. Restart to apply the new version.",
+			})
+		}
+	}
+
+	return nil
+}
+
+func (a *App) CancelUpdate() {
+	a.restart.Store(false)
+	update.GetUpdaterInstance().Reset()
+	if a.events != nil {
+		a.events.Emit("update-progress", update.Progress{
+			State: update.StateUpdateAvailable,
+		})
+	}
+}
+
+// ── Crash reporter ─────────────────────────────────────────────────────────
+
+// ReportCrash is called by the frontend when it catches an unhandled JS error
+// or React render failure. It logs the crash and shows an error dialog so the
+// user knows to submit logs.
+func (a *App) ReportCrash(message string, stack string) {
+	logger.Errorf("Frontend crash reported — message: %s\nStack:\n%s", message, stack)
+	if a.dialogs != nil {
+		a.dialogs.Error(
+			"Application Error",
+			"An unexpected error occurred.\n\nPlease use 'Download Logs' to export logs and report this issue.\n\n"+message,
+		)
+	}
 }

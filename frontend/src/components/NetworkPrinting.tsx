@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import StepDialog from "./StepDialog";
-import { GetTroubleshootInfo } from "../../wailsjs/go/main/App";
-import { main } from "../../wailsjs/go/models";
+import { GetTroubleshootInfo } from "@bindings/obox-app/app";
+import * as main from "@bindings/obox-app/models";
 import { getLinuxSteps, getMacSteps, getWindowsSteps } from "../assets/data/troubleshootStep";
 import type { Step } from "../types";
 import { AppContext } from "../contexts/AppContext";
@@ -11,7 +11,8 @@ export default function NetworkPrinting() {
   const [isLoadingInfo, setIsLoadingInfo] = useState(false);
   const [info, setInfo] = useState<main.TroubleshootInfo | null>(null);
 
-  const enabled = appContext.data.networkPrintingEnabled;
+  const enabled = appContext.data.settings.networkPrintingEnabled;
+  const os = appContext.data.system.os;
 
   const fetchInfo = async () => {
     setIsLoadingInfo(true);
@@ -35,17 +36,17 @@ export default function NetworkPrinting() {
 
   const steps = useMemo<Step[]>(() => {
     if (!info) return [];
-    if (appContext.data.isWindows) {
+    if (os === "windows") {
       return getWindowsSteps(info);
     }
-    if (appContext.data.isLinux) {
+    if (os === "linux") {
       return getLinuxSteps(info);
     }
-    if (appContext.data.isMac) {
+    if (os === "darwin") {
       return getMacSteps(info);
     }
     return [];
-  }, [info]);
+  }, [info, os]);
 
   if (!enabled) {
     return null;

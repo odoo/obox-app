@@ -6,8 +6,8 @@ frontend/dist
 
 .idea/
 
-/frontend/wailsjs/
 .vscode/
 package.json.md5
 package-lock.json
 coverage.out
+obox-app

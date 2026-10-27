@@ -15,7 +15,7 @@ import {
   LinkIcon,
 } from "../functions/icon";
 import { useClipboard } from "../hooks/useClipboard";
-import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
+import { openBrowser } from "../lib/wails";
 import Dialog from "./Dialog";
 
 function DisconnectButton({ onClick }: { onClick: (e?: React.MouseEvent) => void; }) {
@@ -51,7 +51,7 @@ function CopyButton({ label, isCopied, onCopy }: CopyButtonProps) {
       className={`shrink-0 p-1.5 rounded-lg transition-all duration-150 cursor-pointer flex items-center justify-center ${isCopied
         ? "text-emerald-600 bg-emerald-100/80 ring-1 ring-emerald-300"
         : "text-gray-400 hover:text-odoo hover:bg-purple-50 active:scale-95"
-        }`}
+      }`}
     >
       {isCopied ? (
         <CheckIcon className="w-3.5 h-3.5" />
@@ -70,6 +70,7 @@ interface FieldCardProps {
   icon: React.ReactNode;
   isCopied: boolean;
   onCopy: () => void;
+  isLoading?: boolean;
 }
 
 function FieldCard({
@@ -80,27 +81,32 @@ function FieldCard({
   icon,
   isCopied,
   onCopy,
+  isLoading,
 }: FieldCardProps) {
   return (
     <div
       className="flex items-center justify-between gap-2 bg-gray-50 hover:bg-gray-100/70 border border-gray-200/80 rounded-xl px-3 py-2.5 transition-all shadow-2xs"
       title={title}
     >
-      <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex items-center gap-2.5 min-w-0 flex-1">
         <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center shrink-0 border`}>
           {icon}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
             {label}
           </div>
-          <div className="font-mono text-xs text-gray-800 font-medium truncate">
-            {value || "—"}
-          </div>
+          {isLoading ? (
+            <div className="h-3.5 bg-gray-200 rounded w-28 animate-pulse mt-1" />
+          ) : (
+            <div className="font-mono text-xs text-gray-800 font-medium truncate">
+              {value || "—"}
+            </div>
+          )}
         </div>
       </div>
 
-      <CopyButton label={label} isCopied={isCopied} onCopy={onCopy} />
+      {!isLoading && <CopyButton label={label} isCopied={isCopied} onCopy={onCopy} />}
     </div>
   );
 }
@@ -181,7 +187,7 @@ export default function OdooStatus() {
   const fields: Omit<FieldCardProps, "isCopied" | "onCopy">[] = [
     {
       label: "IP Address",
-      value: appData.ipAddress,
+      value: appData.server.ipAddress,
       title: "Network IP Address",
       iconBg: "bg-blue-50 text-blue-600 border-blue-100/60",
       icon: <IpIcon className="w-3.5 h-3.5" />,
@@ -203,7 +209,15 @@ export default function OdooStatus() {
     }
   }, [isConnected]);
 
-  const openButton = (
+  const openButton = odooData.isLoading ? (
+    <div
+      className="flex-1 min-w-0 h-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-lg px-2.5 py-3 bg-gray-50/50 animate-pulse select-none"
+      title="Checking Odoo connection status…"
+    >
+      <div className="w-4 h-4 rounded bg-gray-200 shrink-0" />
+      <div className="h-4 bg-gray-200 rounded w-28" />
+    </div>
+  ) : (
     <div
       role="button"
       tabIndex={0}
@@ -211,7 +225,7 @@ export default function OdooStatus() {
       className={`flex-1 min-w-0 h-full flex items-center justify-center gap-2 border-2 border-dashed rounded-lg px-2.5 py-3 cursor-pointer transition-colors ${isConnected
         ? "text-odoo border-odoo bg-gray-50 hover:border-odoo-dark hover:bg-gray-100"
         : "text-gray-600 border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100"
-        }`}
+      }`}
     >
       {isConnected ? (
         <>
@@ -238,7 +252,18 @@ export default function OdooStatus() {
     >
       <div className="space-y-4">
         {/* Connection Status Section */}
-        {isConnected && odooData.status?.dbUrl ? (
+        {odooData.isLoading ? (
+          <div className="bg-gray-50/70 border border-gray-200/80 rounded-xl p-3 flex items-center justify-between animate-pulse">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-gray-200" />
+              <div className="h-3.5 bg-gray-200 rounded w-36" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-6 rounded-full bg-gray-200" />
+              <div className="w-6 h-6 rounded-full bg-gray-200" />
+            </div>
+          </div>
+        ) : isConnected && odooData.status?.dbUrl ? (
           <div className="bg-purple-50/60 border border-purple-100 rounded-xl p-3 space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
@@ -258,7 +283,7 @@ export default function OdooStatus() {
                 type="button"
                 onClick={() => {
                   if (odooData.status?.dbUrl) {
-                    BrowserOpenURL(odooData.status.dbUrl);
+                    openBrowser(odooData.status.dbUrl);
                   }
                 }}
                 title="Open in browser"
@@ -296,6 +321,7 @@ export default function OdooStatus() {
               <FieldCard
                 key={field.label}
                 {...field}
+                isLoading={appData.isLoading}
                 isCopied={isCopied(field.label)}
                 onCopy={() => copy(field.value, field.label)}
               />

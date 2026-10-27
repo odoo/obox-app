@@ -1,4 +1,4 @@
-import { printer } from "../../wailsjs/go/models";
+import * as printer from "@bindings/obox-app/internal/printer/models";
 import { PrinterContext } from "../contexts/PrinterContext";
 import { useContext } from "react";
 import PrinterActions from "./PrinterActions";
@@ -7,13 +7,13 @@ import { PrinterTypeIcon, TrashIcon } from "../functions/icon";
 
 type PrinterListItemProps =
   | {
-      printer: printer.Device;
-      isOnline: true;
-    }
+    printer: printer.Device;
+    isOnline: true;
+  }
   | {
-      printer: printer.UnavailableDevice;
-      isOnline: false;
-    };
+    printer: printer.UnavailableDevice;
+    isOnline: false;
+  };
 
 export default function PrinterListItem({
   printer,
