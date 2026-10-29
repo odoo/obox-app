@@ -1,19 +1,20 @@
-import { printer } from "../../wailsjs/go/models";
+import * as printer from "@bindings/obox-app/internal/printer/models";
 import { PrinterContext } from "../contexts/PrinterContext";
 import { useContext } from "react";
 import PrinterActions from "./PrinterActions";
 import LibusbFixDialog from "./LibusbFixDialog";
+import Dialog from "./Dialog";
 import { PrinterTypeIcon, TrashIcon } from "../functions/icon";
 
 type PrinterListItemProps =
   | {
-      printer: printer.Device;
-      isOnline: true;
-    }
+    printer: printer.Device;
+    isOnline: true;
+  }
   | {
-      printer: printer.UnavailableDevice;
-      isOnline: false;
-    };
+    printer: printer.UnavailableDevice;
+    isOnline: false;
+  };
 
 export default function PrinterListItem({
   printer,
@@ -59,15 +60,44 @@ export default function PrinterListItem({
               {printer.name}
             </span>
             {printer.isLAN && (
-              <button
-                type="button"
-                onClick={() => printerContext.actions.removeLanPrinter(printer)}
-                title="Remove network printer"
-                aria-label="Remove network printer"
-                className="w-7 h-7 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+              <Dialog
+                title="Remove Printer"
+                maxWidth="max-w-xs"
+                openButton={
+                  <button
+                    type="button"
+                    title="Remove network printer"
+                    aria-label="Remove network printer"
+                    className="w-7 h-7 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                  </button>
+                }
+                actions={[
+                  {
+                    name: "cancel",
+                    label: "Cancel",
+                    variant: "secondary",
+                  },
+                  {
+                    name: "remove",
+                    label: "Remove",
+                    variant: "danger",
+                    onClick: async () => {
+                      const res = await printerContext.actions.removeLanPrinter(printer);
+                      return res.status;
+                    },
+                  },
+                ]}
               >
-                <TrashIcon className="w-4 h-4" />
-              </button>
+                <p className="text-sm text-gray-600">
+                  Are you sure you want to remove the printer at{" "}
+                  <span className="font-semibold text-gray-900">
+                    {printer.lanIp || printer.ip}
+                  </span>
+                  ?
+                </p>
+              </Dialog>
             )}
           </div>
           <div className="text-gray-600 mt-2 text-sm break-all">

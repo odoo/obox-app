@@ -1,6 +1,5 @@
 @import "tailwindcss";
 
-
 @theme {
     --color-odoo-dark: #7a3f66;
     --color-odoo: #975480;
@@ -8,4 +7,19 @@
     --color-danger: rgb(210, 63, 58);
     --color-success: rgb(0, 136, 24);
     --color-warning: rgb(245, 158, 11);
+}
+
+@keyframes fadeInSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeInSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

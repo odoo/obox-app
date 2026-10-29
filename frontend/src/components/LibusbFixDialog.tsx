@@ -6,19 +6,19 @@ import StepDialog from "./StepDialog";
 
 export default function LibusbFixDialog({ printerName }: { printerName: string; }) {
   const appContext = useContext(AppContext);
-
+  const os = appContext.data.system.os;
   const fixSteps = useMemo<Step[]>(() => {
-    if (appContext.data.isWindows) {
+    if (os === "windows") {
       return zadigSteps(printerName);
     }
-    if (appContext.data.isMac) {
+    if (os === "darwin") {
       return brewSteps(printerName);
     }
-    if (appContext.data.isLinux) {
+    if (os === "linux") {
       return linuxSteps(printerName);
     }
     return [];
-  }, [printerName, appContext.data.os]);
+  }, [printerName, os]);
 
   if (fixSteps.length === 0) {
     return null;

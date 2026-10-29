@@ -1,14 +1,17 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import {
   DownloadLogs,
+  ToggleDebugMode,
   ToggleAutoStart,
   ToggleNetworkPrinting,
-} from "../../wailsjs/go/main/App";
+} from "@bindings/obox-app/app";
 import { ToastContext } from "../contexts/ToastContext";
 import { errorText } from "../error";
 import {
   BoltIcon,
+  BugIcon,
   DownloadIcon,
+  HelpCircleIcon,
   SettingsIcon,
   WifiIcon,
 } from "../functions/icon";
@@ -17,10 +20,15 @@ import { AppContext } from "../contexts/AppContext";
 interface ToggleSwitchProps {
   checked: boolean;
   disabled?: boolean;
+  isLoading?: boolean;
   onChange: () => void;
 }
 
-function ToggleSwitch({ checked, disabled, onChange }: ToggleSwitchProps) {
+function ToggleSwitch({ checked, disabled, isLoading, onChange }: ToggleSwitchProps) {
+  if (isLoading) {
+    return <div className="h-5 w-9 shrink-0 rounded-full bg-gray-200 animate-pulse" />;
+  }
+
   return (
     <button
       type="button"
@@ -32,13 +40,84 @@ function ToggleSwitch({ checked, disabled, onChange }: ToggleSwitchProps) {
         onChange();
       }}
       className={`inline-flex h-5 w-9 shrink-0 p-0.5 rounded-full transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${checked ? "bg-odoo" : "bg-gray-300"
-        }`}
+      }`}
     >
       <span
         aria-hidden="true"
         className={`h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-4" : "translate-x-0"
-          }`}
+        }`}
       />
+    </button>
+  );
+}
+
+interface ConfigToggleItemProps {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  description: string;
+  checked: boolean;
+  disabled: boolean;
+  isLoading: boolean;
+  onToggle: () => void;
+}
+
+function ConfigToggleItem({
+  icon,
+  iconBg,
+  title,
+  description,
+  checked,
+  disabled,
+  isLoading,
+  onToggle,
+}: ConfigToggleItemProps) {
+  return (
+    <div
+      onClick={onToggle}
+      className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
+    >
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${iconBg}`}>
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-gray-800">{title}</div>
+          <div className="text-[10px] text-gray-500 truncate">{description}</div>
+        </div>
+      </div>
+      <ToggleSwitch
+        checked={checked}
+        disabled={disabled}
+        isLoading={isLoading}
+        onChange={onToggle}
+      />
+    </div>
+  );
+}
+
+interface ConfigActionItemProps {
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  description: string;
+  onClick: () => void;
+}
+
+function ConfigActionItem({ icon, iconBg, title, description, onClick }: ConfigActionItemProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
+    >
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-xs font-medium text-gray-800">{title}</div>
+        <div className="text-[10px] text-gray-500 truncate">{description}</div>
+      </div>
     </button>
   );
 }
@@ -51,8 +130,8 @@ export default function HeaderMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoadingAutostart, setIsLoadingAutostart] = useState(false);
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(false);
-
-  const { autoStart, networkPrintingEnabled } = appContext.data;
+  const [isLoadingDebugMode, setIsLoadingDebugMode] = useState(false);
+  const { settings:{autoStart, networkPrintingEnabled, debugMode}, isLoading } = appContext.data;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -69,27 +148,21 @@ export default function HeaderMenu() {
     };
   }, [isOpen]);
 
-  const toggleAutostart = async () => {
-    setIsLoadingAutostart(true);
+  const toggleSetting = async (
+    action: () => Promise<unknown>,
+    setLoading: (loading: boolean) => void,
+    name: string,
+    currentValue: boolean
+  ) => {
+    if (isLoading) return;
+    setLoading(true);
     try {
-      await ToggleAutoStart();
-      toastContext.actions.showToast(`Auto start ${autoStart ? "Disabled" : "Enabled"}`, "success");
+      await action();
+      toastContext.actions.showToast(`${name} ${currentValue ? "Disabled" : "Enabled"}`, "success");
     } catch (err) {
-      toastContext.actions.showToast(`Failed to update auto start: ${errorText(err, "unknown error")}`, "danger");
+      toastContext.actions.showToast(`Failed to update ${name.toLowerCase()}: ${errorText(err, "unknown error")}`, "danger");
     } finally {
-      setIsLoadingAutostart(false);
-    }
-  };
-
-  const toggleNetworkPrinting = async () => {
-    setIsLoadingNetwork(true);
-    try {
-      await ToggleNetworkPrinting();
-      toastContext.actions.showToast(`Network printing ${networkPrintingEnabled ? "Disabled" : "Enabled"}`, "success");
-    } catch (err) {
-      toastContext.actions.showToast(`Failed to update network printing: ${errorText(err, "unknown error")}`, "danger");
-    } finally {
-      setIsLoadingNetwork(false);
+      setLoading(false);
     }
   };
 
@@ -102,6 +175,11 @@ export default function HeaderMenu() {
     }
   };
 
+  const handleOpenAbout = () => {
+    setIsOpen(false);
+    appContext.actions.openAbout();
+  };
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -112,7 +190,7 @@ export default function HeaderMenu() {
         className={`p-2 rounded-xl text-gray-500 hover:text-odoo hover:bg-purple-50 active:scale-95 transition-all cursor-pointer flex items-center justify-center border ${isOpen
           ? "bg-purple-50 text-odoo border-purple-200"
           : "border-transparent hover:border-purple-100"
-          }`}
+        }`}
       >
         <SettingsIcon className="w-5 h-5" />
       </button>
@@ -124,77 +202,55 @@ export default function HeaderMenu() {
           </div>
 
           <div className="space-y-1">
-            {/* Auto Start Item */}
-            <div
-              onClick={toggleAutostart}
-              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-purple-50 border border-purple-100/80 text-odoo flex items-center justify-center shrink-0">
-                  <BoltIcon className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-gray-800">
-                    Auto start
-                  </div>
-                  <div className="text-[10px] text-gray-500 truncate">
-                    Launch on system login
-                  </div>
-                </div>
-              </div>
-              <ToggleSwitch
-                checked={autoStart}
-                disabled={isLoadingAutostart}
-                onChange={toggleAutostart}
-              />
-            </div>
-
-            {/* Network Printing Item */}
-            <div
-              onClick={toggleNetworkPrinting}
-              className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100/80 text-blue-600 flex items-center justify-center shrink-0">
-                  <WifiIcon className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-medium text-gray-800">
-                    Accept print requests
-                  </div>
-                  <div className="text-[10px] text-gray-500">
-                    Accept LAN print jobs from other devices
-                  </div>
-                </div>
-              </div>
-              <ToggleSwitch
-                checked={networkPrintingEnabled}
-                disabled={isLoadingNetwork}
-                onChange={toggleNetworkPrinting}
-              />
-            </div>
+            <ConfigToggleItem
+              icon={<BoltIcon className="w-3.5 h-3.5" />}
+              iconBg="bg-purple-50 border-purple-100/80 text-odoo"
+              title="Auto start"
+              description="Launch on system login"
+              checked={autoStart}
+              disabled={isLoadingAutostart}
+              isLoading={isLoading}
+              onToggle={() => toggleSetting(ToggleAutoStart, setIsLoadingAutostart, "Auto start", autoStart)}
+            />
+            <ConfigToggleItem
+              icon={<WifiIcon className="w-3.5 h-3.5" />}
+              iconBg="bg-blue-50 border-blue-100/80 text-blue-600"
+              title="Accept print requests"
+              description="Accept LAN print jobs from other devices"
+              checked={networkPrintingEnabled}
+              disabled={isLoadingNetwork}
+              isLoading={isLoading}
+              onToggle={() => toggleSetting(ToggleNetworkPrinting, setIsLoadingNetwork, "Network printing", networkPrintingEnabled)}
+            />
+            <ConfigToggleItem
+              icon={<BugIcon className="w-3.5 h-3.5" />}
+              iconBg="bg-emerald-50 border-emerald-100/80 text-emerald-600"
+              title="Debug mode"
+              description="Enable verbose logging (24h)"
+              checked={debugMode}
+              disabled={isLoadingDebugMode}
+              isLoading={isLoading}
+              onToggle={() => toggleSetting(ToggleDebugMode, setIsLoadingDebugMode, "Debug mode", debugMode)}
+            />
           </div>
 
           <div className="border-t border-gray-100 my-1.5" />
 
           <div className="space-y-1">
-            <button
-              type="button"
+            <ConfigActionItem
+              icon={<DownloadIcon className="w-3.5 h-3.5" />}
+              iconBg="bg-amber-50 border-amber-100/80 text-amber-600"
+              title="Download Logs"
+              description="Export logs archive for debug"
               onClick={handleDownloadLogs}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-gray-700 hover:bg-gray-50 hover:text-odoo cursor-pointer transition-colors text-left"
-            >
-              <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-100/80 text-amber-600 flex items-center justify-center shrink-0">
-                <DownloadIcon className="w-3.5 h-3.5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-medium text-gray-800">
-                  Download Logs
-                </div>
-                <div className="text-[10px] text-gray-500 truncate">
-                  Export logs archive for debug
-                </div>
-              </div>
-            </button>
+            />
+            <ConfigActionItem
+              icon={<HelpCircleIcon className="w-3.5 h-3.5" />}
+              iconBg="bg-purple-50 border-purple-100/80 text-odoo"
+              title="About Obox App"
+              description="Version, updates & system info"
+              onClick={handleOpenAbout}
+            />
           </div>
         </div>
       )}

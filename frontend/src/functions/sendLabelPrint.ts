@@ -1,4 +1,4 @@
-import { printer } from "../../wailsjs/go/models";
+import type * as printer from "@bindings/obox-app/internal/printer/models";
 
 export async function sendLabelPrint(printer: printer.Device) {
   const zpl = `

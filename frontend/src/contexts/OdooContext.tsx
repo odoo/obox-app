@@ -1,10 +1,10 @@
 import { createContext, useCallback, useEffect, useState } from "react";
-import { obox } from "../../wailsjs/go/models";
+import * as obox from "@bindings/obox-app/internal/obox/models";
 import {
   ConfirmDisconnectOdoo,
   CheckOdooStatus,
-} from "../../wailsjs/go/main/App";
-import { EventsOn } from "../../wailsjs/runtime/runtime";
+} from "@bindings/obox-app/app";
+import { onEvent } from "../lib/wails";
 
 export type OdooContextType = {
   data: {
@@ -47,7 +47,7 @@ export const OdooContextWrapper = ({ children }: OdooContextWrapperProps) => {
 
   useEffect(() => {
     // Listen to real-time status updates pushed from backend
-    const unsubscribe = EventsOn("odoo:status_changed", (newStatus: obox.ConnectionStatus) => {
+    const unsubscribe = onEvent<obox.ConnectionStatus>("odoo:status_changed", (newStatus) => {
       setStatus(newStatus);
     });
 
@@ -71,4 +71,3 @@ export const OdooContextWrapper = ({ children }: OdooContextWrapperProps) => {
     </OdooContext.Provider>
   );
 };
-

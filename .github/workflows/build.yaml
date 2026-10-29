@@ -3,8 +3,8 @@ name: Wails build
 on:
   push:
     tags:
-      # Match any new tag
-      - '*'
+      # SemVer release tags (e.g. 1.0.0)
+      - '[0-9]+.[0-9]+.[0-9]+'
 
 env:
   # Necessary for most environments as build failure can occur due to OOM issues
@@ -20,17 +20,19 @@ jobs:
       fail-fast: false
       matrix:
         build:
-          - name: 'obox-app-linux64'
+          # Note: 'name' must match the platform format 'obox-app-<os>-<arch>' (e.g. obox-app-linux-amd64)
+          # because the auto-updater (internal/update/asset.go) looks for this exact prefix in release assets.
+          - name: 'obox-app-linux-amd64'
             platform:  'linux/amd64'
             os: 'ubuntu-latest'
 
-          - name: 'obox-app-win64'
+          - name: 'obox-app-windows-amd64'
             platform:  'windows/amd64'
             os: 'windows-latest'
 
           # Disable automatic macOS builds for now as it's better to sign in a local environment
           # with the correct certificates and provisioning profiles.
-          #- name: 'obox-app-macos-arm64'
+          #- name: 'obox-app-darwin-arm64'
           #  macos-app-name: 'Obox App'
           #  platform:  'darwin/arm64'
           #  os: 'macos-latest'
@@ -39,7 +41,7 @@ jobs:
     runs-on: ${{ matrix.build.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 

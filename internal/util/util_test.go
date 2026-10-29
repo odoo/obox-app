@@ -86,22 +86,3 @@ func TestZipLogs_EmptyDirectory_SourceDirNotFound_InvalidTargetZip(t *testing.T)
 	err = ZipLogs(sourceDir, invalidTarget)
 	testutil.ExpectedErrorContains(t, err, "failed to create zip file")
 }
-
-func TestEnableLinuxAutostart(t *testing.T) {
-	tempDir := t.TempDir()
-	t.Setenv("HOME", tempDir)
-
-	err := EnableLinuxAutostart()
-	testutil.ExpectedNoError(t, err)
-
-	desktopFilePath := filepath.Join(tempDir, ".config", "autostart", "obox-app.desktop")
-	data, err := os.ReadFile(desktopFilePath)
-	testutil.ExpectedNoError(t, err)
-
-	content := string(data)
-	testutil.ExpectedContains(t, content, "[Desktop Entry]")
-	testutil.ExpectedContains(t, content, "Type=Application")
-	testutil.ExpectedContains(t, content, "Name=Obox App")
-	testutil.ExpectedContains(t, content, "Exec=")
-	testutil.ExpectedContains(t, content, "X-GNOME-Autostart-enabled=true")
-}

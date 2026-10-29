@@ -1,8 +1,10 @@
+import AboutDialog from "./components/about/AboutDialog";
+import AppProviders from "./contexts/AppProviders";
 import HeaderBar from "./components/HeaderBar";
 import NetworkPrinting from "./components/NetworkPrinting";
 import NetworkPrintingEnabledDialog from "./components/NetworkPrintingEnabledDialog";
 import PrinterList from "./components/PrinterList";
-import AppProviders from "./contexts/AppProviders";
+import UpdateBanner from "./components/UpdateBanner";
 
 export default function App() {
   return (
@@ -15,6 +17,8 @@ export default function App() {
           </section>
           <NetworkPrintingEnabledDialog />
           <NetworkPrinting />
+          <AboutDialog />
+          <UpdateBanner />
         </main>
       </div>
     </AppProviders>

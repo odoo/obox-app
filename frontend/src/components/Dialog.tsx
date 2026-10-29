@@ -1,9 +1,9 @@
-import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMountTransition } from "../hooks/useMountTransition";
 import CloseButton from "./CloseButton";
 
-export type ActionType = "primary" | "secondary" | "danger"
+export type ActionType = "primary" | "secondary" | "danger";
 
 export interface DialogAction {
   name: string;
@@ -32,7 +32,10 @@ interface DialogProps {
 function useSignal(signal: number | undefined, callback: () => void) {
   const prevSignal = useRef(signal);
   const callbackRef = useRef(callback);
-  callbackRef.current = callback;
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
 
   useEffect(() => {
     if (signal === undefined || signal === prevSignal.current) {
@@ -59,22 +62,22 @@ export default function Dialog({
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const { mounted } = useMountTransition(isOpen);
 
-  const close = () => {
+  const close = useCallback(() => {
     setIsOpen(false);
     onClose?.();
-  };
+  }, [onClose]);
 
-  const open = () => {
+  const open = useCallback(() => {
     setIsOpen(true);
     onOpen?.();
-  };
+  }, [onOpen]);
 
   useSignal(openSignal, open);
   useSignal(closeSignal, close);
 
   const isExecuting = useRef(false);
 
-  const handleAction = async (action: DialogAction) => {
+  const handleAction = useCallback(async (action: DialogAction) => {
     if (action.disabled || isExecuting.current) {
       return;
     }
@@ -95,7 +98,7 @@ export default function Dialog({
       isExecuting.current = false;
       setLoadingAction(null);
     }
-  };
+  }, [close]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -126,7 +129,7 @@ export default function Dialog({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, actions, onClose]);
+  }, [isOpen, actions, close, handleAction]);
 
   return (
     <>
@@ -143,14 +146,14 @@ export default function Dialog({
             className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 transition ${isOpen
               ? "opacity-100 duration-200 ease-out"
               : "opacity-0 duration-150 ease-in"
-              }`}
+            }`}
           >
             <div
               className="absolute inset-0 bg-black/75"
               onClick={() => close()}
             />
 
-            <div className={`relative bg-white rounded-2xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto p-6 ${showTitleDivider ? "pt-4" : ""}`}>
+            <div className={`relative bg-white rounded-2xl w-full ${maxWidth} max-h-[calc(100vh-2rem)] shadow-xl overflow-y-auto overflow-x-hidden p-6 transition-all duration-200 ease-out transform ${isOpen ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-2"} ${showTitleDivider ? "pt-4" : ""}`}>
               <div className={`flex items-center justify-between ${showTitleDivider ? "pb-3 mb-4 border-b border-gray-200" : "mb-5"}`}>
                 <div className="text-lg font-medium">{title}</div>
                 <CloseButton onClick={() => close()} />

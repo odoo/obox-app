@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"obox-app/internal/testutil"
 )
@@ -194,6 +195,36 @@ func TestManager_LANPrinters(t *testing.T) {
 	testutil.ExpectedLen(t, cm.GetLANPrinters(), 1)
 }
 
+func TestManager_LastSeenUpdate(t *testing.T) {
+	tempDir := t.TempDir()
+
+	cm := &Manager{
+		path: filepath.Join(tempDir, "config.json"),
+		Data: AppConfig{},
+	}
+
+	testutil.ExpectedEqual(t, cm.LastSeenUpdate(), "")
+
+	testutil.ExpectedNoError(t, cm.SetLastSeenUpdate("1.2.3"))
+	testutil.ExpectedEqual(t, cm.LastSeenUpdate(), "1.2.3")
+
+	// Calling SetLastSeenUpdate with the same tag again saves but leaves the value unchanged.
+	testutil.ExpectedNoError(t, cm.SetLastSeenUpdate("1.2.3"))
+	testutil.ExpectedEqual(t, cm.LastSeenUpdate(), "1.2.3")
+
+	// A newer release replaces the previous one.
+	testutil.ExpectedNoError(t, cm.SetLastSeenUpdate("1.3.0"))
+	testutil.ExpectedEqual(t, cm.LastSeenUpdate(), "1.3.0")
+
+	// The value survives a reload from disk.
+	reloaded := &Manager{
+		path: filepath.Join(tempDir, "config.json"),
+		Data: AppConfig{},
+	}
+	testutil.ExpectedNoError(t, reloaded.Load())
+	testutil.ExpectedEqual(t, reloaded.LastSeenUpdate(), "1.3.0")
+}
+
 func TestManager_ConcurrentAccess(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -228,4 +259,55 @@ func TestFindAvailablePort_RangeExhausted(t *testing.T) {
 	testutil.ExpectedError(t, err)
 	testutil.ExpectedTrue(t, errors.Is(err, ErrNoAvailablePort))
 	testutil.ExpectedEqual(t, result, 0)
+}
+
+func TestManager_DebugMode(t *testing.T) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "config.json")
+
+	newManager := func() *Manager {
+		return &Manager{
+			path: configFile,
+			Data: defaults(),
+		}
+	}
+
+	cm := newManager()
+
+	testutil.ExpectedFalse(t, cm.IsDebugMode())
+	testutil.ExpectedNil(t, cm.Data.DebugModeExpiresAt)
+
+	err := cm.ToggleDebugMode()
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, cm.IsDebugMode())
+
+	exp := cm.Data.DebugModeExpiresAt
+	testutil.ExpectedNotNil(t, exp)
+	testutil.ExpectedTrue(t, exp.After(time.Now()), "Expiration should be in the future")
+	testutil.ExpectedTrue(t, exp.Before(time.Now().Add(25*time.Hour)), "Expiration should be around 24 hours")
+
+	// Verify persistence by reloading from disk.
+	cmReloaded := newManager()
+	err = cmReloaded.Load()
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedTrue(t, cmReloaded.IsDebugMode())
+	testutil.ExpectedNotNil(t, cmReloaded.Data.DebugModeExpiresAt)
+
+	// Test expiration in the past -> auto-disable.
+	past := time.Now().Add(-1 * time.Hour)
+	cmReloaded.Data.DebugModeExpiresAt = &past
+	testutil.ExpectedFalse(t, cmReloaded.IsDebugMode())
+	testutil.ExpectedNil(t, cmReloaded.Data.DebugModeExpiresAt)
+
+	// Reload from disk to verify auto-disabled state was persisted.
+	cmExpiredReloaded := newManager()
+	err = cmExpiredReloaded.Load()
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedFalse(t, cmExpiredReloaded.IsDebugMode())
+
+	// Test disabling manually.
+	err = cm.ToggleDebugMode()
+	testutil.ExpectedNoError(t, err)
+	testutil.ExpectedFalse(t, cm.IsDebugMode())
+	testutil.ExpectedNil(t, cm.Data.DebugModeExpiresAt)
 }

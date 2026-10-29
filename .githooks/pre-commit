@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Formatting staged Go files..."
+git diff --cached --name-only --diff-filter=ACM | grep -E '\.go$' | xargs -r gofmt -s -w
+git diff --cached --name-only --diff-filter=ACM | grep -E '\.go$' | xargs -r git add
+
+if [ -x "./frontend/node_modules/.bin/eslint" ]; then
+    echo "Linting staged frontend files..."
+    git diff --cached --name-only --diff-filter=ACM | grep -E '^frontend/.*\.(ts|tsx|js|jsx)$' | xargs -r ./frontend/node_modules/.bin/eslint --fix
+    git diff --cached --name-only --diff-filter=ACM | grep -E '^frontend/.*\.(ts|tsx|js|jsx)$' | xargs -r git add
+else
+    echo "No eslint found, skipping frontend linting..."
+fi
+
+echo "Done!"
